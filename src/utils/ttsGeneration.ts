@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import pLimit from 'p-limit';
-import type { GeneratedVoice, TTSGenerationConfig, TTSBatchProgress, TTSModel, TTSModelInfo, VoiceConfig } from '@/types';
+import type { GeneratedVoice, TTSGenerationConfig, TTSBatchProgress, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
 import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, type ServiceType } from './apiKeyRotation';
 
 const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
@@ -348,11 +348,11 @@ export async function generateVoiceWithRotation(
   );
 }
 
-// Batch generate voices với progress tracking
+// Batch generate voices với progress tracking and real-time updates
 export async function batchGenerateVoices(
   texts: string[],
   config: TTSGenerationConfig,
-  onProgress?: (progress: TTSBatchProgress) => void
+  onProgress?: TTSProgressCallback
 ): Promise<GeneratedVoice[]> {
   console.log("🚀 ~ batchGenerateVoices ~ config:", config)
   const limit = pLimit(CONCURRENT_REQUESTS);
@@ -410,6 +410,18 @@ export async function batchGenerateVoices(
           
           completed++;
           
+          // Gửi completed voice qua callback để hiển thị real-time
+          const completedVoice = results[resultIndex];
+          if (completedVoice) {
+            console.log(`✅ Voice completed: ${completedVoice.id}`);
+            onProgress?.({
+              total: texts.length * config.textsPerVoice,
+              completed,
+              failed,
+              current: text,
+            }, [completedVoice]);
+          }
+          
         } catch (error) {
           console.error(`Failed to generate voice for text "${text}":`, error);
           
@@ -424,14 +436,19 @@ export async function batchGenerateVoices(
           }
           
           failed++;
+          
+          // Gửi failed voice qua callback để hiển thị real-time
+          const failedVoice = results[resultIndex];
+          if (failedVoice) {
+            console.log(`❌ Voice failed: ${failedVoice.id}`);
+            onProgress?.({
+              total: texts.length * config.textsPerVoice,
+              completed,
+              failed,
+              current: text,
+            }, [failedVoice]);
+          }
         }
-        
-        // Cập nhật progress
-        onProgress?.({
-          total: texts.length * config.textsPerVoice,
-          completed,
-          failed,
-        });
       }));
     }
   });

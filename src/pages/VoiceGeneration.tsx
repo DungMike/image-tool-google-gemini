@@ -26,7 +26,8 @@ import type {
   UploadedFile, 
   TTSGenerationConfig, 
   TTSBatchProgress,
-  TTSModel 
+  TTSModel,
+  ChunkingConfig 
 } from '@/types';
 
 export function VoiceGeneration() {
@@ -37,6 +38,13 @@ export function VoiceGeneration() {
   const [selectedModel, setSelectedModel] = useState<TTSModel>('gemini-2.5-flash-preview-tts');
   const [selectedVoice, setSelectedVoice] = useState('Kore');
   const [customPrompt, setCustomPrompt] = useState('');
+  
+  // Chunking configuration
+  const [chunkingConfig, setChunkingConfig] = useState<ChunkingConfig>({
+    sentencesPerChunk: 5,
+    maxWordsPerChunk: 2000,
+    enabled: false,
+  });
   
   // Generation state
   const [voices, setVoices] = useState<GeneratedVoice[]>([]);
@@ -77,12 +85,20 @@ export function VoiceGeneration() {
         return;
       }
       
-      // Parse and validate texts
-      const parsedTexts = await parsePrompts(textareaValue, uploadedFile || undefined);
-      const { valid: validTexts, invalid: invalidTexts } = validatePrompts(parsedTexts.prompts);
+      // Parse and validate texts with chunking
+      const parsedTexts = await parsePrompts(textareaValue, uploadedFile || undefined, chunkingConfig);
+      const { valid: validTexts, invalid: invalidTexts, warnings } = validatePrompts(
+        parsedTexts.prompts, 
+        chunkingConfig.maxWordsPerChunk
+      );
       
       if (invalidTexts.length > 0) {
         toast.warning(`${invalidTexts.length} invalid texts were skipped`);
+      }
+      
+      if (warnings.length > 0) {
+        console.warn('Validation warnings:', warnings);
+        warnings.forEach(warning => toast.warning(warning));
       }
       
       if (validTexts.length === 0) {
@@ -96,7 +112,6 @@ export function VoiceGeneration() {
       // Get selected model info for rate limit checking
       const modelInfo = TTS_MODELS.find(m => m.id === selectedModel);
       const dailyLimit = modelInfo?.rateLimit.requestsPerDay || 50;
-      console.log("🚀 ~ VoiceGeneration ~ dailyLimit:", dailyLimit)
       
       // Warn if generating many voices or approaching limits
       if (totalVoices > 20) {
@@ -121,28 +136,61 @@ export function VoiceGeneration() {
         failed: 0,
       });
       
-      // Clear previous results
-      setVoices([]);
-      
       const config: TTSGenerationConfig = {
         textsPerVoice,
         concurrentRequests: 5,
         model: selectedModel,
         voiceName: selectedVoice,
         customPrompt: customPrompt.trim() || undefined,
+        chunkingConfig,
       };
-      console.log("🚀 ~ VoiceGeneration ~ config:", config)
       
-      // Start generation with progress tracking
+      // Initialize voices with "generating" status to show them immediately
+      const initialVoices: GeneratedVoice[] = [];
+      validTexts.forEach((text, textIndex) => {
+        for (let voiceIndex = 0; voiceIndex < textsPerVoice; voiceIndex++) {
+          const voiceId = `${textIndex}-${voiceIndex}-${Date.now()}`;
+          initialVoices.push({
+            id: voiceId,
+            text,
+            originalText: text,
+            customPrompt: config.customPrompt,
+            voiceName: config.voiceName,
+            status: 'generating',
+            timestamp: Date.now(),
+          });
+        }
+      });
+      
+      // Set initial voices to show UI immediately
+      setVoices(initialVoices);
+      
+      // Start generation with progress tracking and real-time voice updates
       const results = await batchGenerateVoices(
         validTexts,
         config,
-        (progress) => {
+        (progress, completedVoices) => {
           setBatchProgress(progress);
+          
+          // Update voices in real-time as they complete
+          if (completedVoices && completedVoices.length > 0) {
+            setVoices(prev => {
+              // Create a map of existing voices by ID for efficient lookup
+              const existingVoicesMap = new Map(prev.map(voice => [voice.id, voice]));
+              
+              // Update with completed voices
+              completedVoices.forEach(voice => {
+                existingVoicesMap.set(voice.id, voice);
+              });
+              
+              // Return updated array maintaining order
+              return Array.from(existingVoicesMap.values());
+            });
+          }
         }
       );
       
-      // Update voices state
+      // Final update to ensure all voices are displayed
       setVoices(results);
       
       // Show completion toast
@@ -163,7 +211,7 @@ export function VoiceGeneration() {
     } finally {
       setIsGenerating(false);
     }
-  }, [textareaValue, uploadedFile, textsPerVoice, selectedModel, selectedVoice, customPrompt]);
+  }, [textareaValue, uploadedFile, textsPerVoice, selectedModel, selectedVoice, customPrompt, chunkingConfig]);
 
   // Handle single voice regeneration
   const handleRegenerateVoice = useCallback((voiceId: string, currentText: string, currentVoice: string, currentCustomPrompt?: string) => {
@@ -344,6 +392,72 @@ export function VoiceGeneration() {
                   <span>Voices:</span>
                   <span>30+ available</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Chunking Configuration */}
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Cog6ToothIcon className="w-5 h-5 text-purple-600" />
+                <h3 className="text-sm font-medium text-gray-900">Text Chunking</h3>
+              </div>
+              
+              <div className="space-y-3">
+                {/* Enable Chunking Toggle */}
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-gray-700">Enable Chunking</label>
+                  <input
+                    type="checkbox"
+                    checked={chunkingConfig.enabled}
+                    onChange={(e) => setChunkingConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                  />
+                </div>
+                
+                {chunkingConfig.enabled && (
+                  <>
+                    {/* Sentences per Chunk */}
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1">
+                        Sentences per Chunk (1-20)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={chunkingConfig.sentencesPerChunk}
+                        onChange={(e) => setChunkingConfig(prev => ({ 
+                          ...prev, 
+                          sentencesPerChunk: Math.max(1, Math.min(20, parseInt(e.target.value) || 1))
+                        }))}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                    
+                    {/* Max Words per Chunk */}
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1">
+                        Max Words per Chunk (≤4000)
+                      </label>
+                      <input
+                        type="number"
+                        min="100"
+                        max="4000"
+                        value={chunkingConfig.maxWordsPerChunk}
+                        onChange={(e) => setChunkingConfig(prev => ({ 
+                          ...prev, 
+                          maxWordsPerChunk: Math.max(100, Math.min(4000, parseInt(e.target.value) || 2000))
+                        }))}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                    
+                    <div className="text-xs text-gray-500 pt-1 border-t">
+                      <p>• Gom nhiều câu thành 1 chunk để tạo audio dài hơn</p>
+                      <p>• Giúp tối ưu cho văn bản ngắn</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

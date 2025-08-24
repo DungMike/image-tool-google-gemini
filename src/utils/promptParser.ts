@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import type { ParsedPrompts, FileType, UploadedFile } from '@/types';
+import type { ParsedPrompts, FileType, UploadedFile, ChunkingConfig } from '@/types';
 
 // Parse prompts từ textarea
 export function parseTextareaPrompts(text: string): string[] {
@@ -7,6 +7,80 @@ export function parseTextareaPrompts(text: string): string[] {
     .split('\n')
     .map(line => line.trim())
     .filter(line => line.length > 0);
+}
+
+// Count words in text (simple word count)
+export function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
+// Split text into sentences (basic sentence splitting)
+export function splitIntoSentences(text: string): string[] {
+  // Basic sentence splitting - can be improved with more sophisticated logic
+  return text
+    .split(/[.!?]+/)
+    .map(sentence => sentence.trim())
+    .filter(sentence => sentence.length > 0)
+    .map(sentence => sentence + (sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? '' : '.'));
+}
+
+// Group sentences into chunks based on configuration
+export function chunkSentences(sentences: string[], config: ChunkingConfig): string[] {
+  if (!config.enabled || sentences.length === 0) {
+    return sentences;
+  }
+
+  const chunks: string[] = [];
+  let currentChunk: string[] = [];
+  let currentWordCount = 0;
+
+  for (const sentence of sentences) {
+    const sentenceWordCount = countWords(sentence);
+    
+    // Check if adding this sentence would exceed limits
+    const wouldExceedSentenceLimit = currentChunk.length >= config.sentencesPerChunk;
+    const wouldExceedWordLimit = currentWordCount + sentenceWordCount > config.maxWordsPerChunk;
+    
+    // If we would exceed limits and have at least one sentence, finish current chunk
+    if ((wouldExceedSentenceLimit || wouldExceedWordLimit) && currentChunk.length > 0) {
+      chunks.push(currentChunk.join(' '));
+      currentChunk = [sentence];
+      currentWordCount = sentenceWordCount;
+    } else {
+      // Add sentence to current chunk
+      currentChunk.push(sentence);
+      currentWordCount += sentenceWordCount;
+    }
+  }
+
+  // Add remaining sentences as final chunk
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk.join(' '));
+  }
+
+  return chunks;
+}
+
+// Process prompts with chunking
+export function processPromptsWithChunking(prompts: string[], config: ChunkingConfig): string[] {
+  if (!config.enabled) {
+    return prompts;
+  }
+
+  const allChunks: string[] = [];
+
+  for (const prompt of prompts) {
+    // Split prompt into sentences
+    const sentences = splitIntoSentences(prompt);
+    
+    // Group sentences into chunks
+    const chunks = chunkSentences(sentences, config);
+    
+    // Add chunks to result
+    allChunks.push(...chunks);
+  }
+
+  return allChunks;
 }
 
 // Detect file type từ extension
@@ -89,8 +163,8 @@ function parseJsonPrompts(content: string): string[] {
     // Nếu là object với property 'prompts'
     if (parsed.prompts && Array.isArray(parsed.prompts)) {
       return parsed.prompts
-        .map(item => String(item).trim())
-        .filter(prompt => prompt.length > 0);
+        .map((item: any) => String(item).trim())
+        .filter((prompt: string) => prompt.length > 0);
     }
     
     // Nếu là object, lấy tất cả values
@@ -135,45 +209,57 @@ export function parseFileContent(content: string, type: FileType): string[] {
 // Main function để parse prompts từ nhiều nguồn
 export async function parsePrompts(
   textareaValue: string,
-  uploadedFile?: UploadedFile
+  uploadedFile?: UploadedFile,
+  chunkingConfig?: ChunkingConfig
 ): Promise<ParsedPrompts> {
+  let prompts: string[] = [];
+  let source: 'textarea' | 'csv' | 'json' | 'txt' = 'textarea';
+  let filename: string | undefined;
+
   // Ưu tiên file upload nếu có
   if (uploadedFile) {
     try {
-      const prompts = parseFileContent(uploadedFile.content, uploadedFile.type);
+      prompts = parseFileContent(uploadedFile.content, uploadedFile.type);
       
       if (prompts.length === 0) {
         throw new Error('No valid prompts found in uploaded file');
       }
       
-      return {
-        prompts,
-        source: uploadedFile.type,
-        filename: uploadedFile.file.name,
-      };
+      source = uploadedFile.type;
+      filename = uploadedFile.file.name;
     } catch (error) {
       console.error('Error parsing uploaded file:', error);
       throw error;
     }
+  } else {
+    // Fallback về textarea
+    prompts = parseTextareaPrompts(textareaValue);
+    
+    if (prompts.length === 0) {
+      throw new Error('Please enter prompts in the textarea or upload a file');
+    }
   }
-  
-  // Fallback về textarea
-  const textPrompts = parseTextareaPrompts(textareaValue);
-  
-  if (textPrompts.length === 0) {
-    throw new Error('Please enter prompts in the textarea or upload a file');
+
+  // Apply chunking if configured
+  if (chunkingConfig) {
+    prompts = processPromptsWithChunking(prompts, chunkingConfig);
+    
+    console.log(`📝 Chunking applied: ${prompts.length} chunks created`);
+    console.log('📊 Chunk word counts:', prompts.map(chunk => countWords(chunk)));
   }
   
   return {
-    prompts: textPrompts,
-    source: 'textarea',
+    prompts,
+    source,
+    filename,
   };
 }
 
-// Validate prompts
-export function validatePrompts(prompts: string[]): { valid: string[]; invalid: string[] } {
+// Validate prompts (updated for TTS with word count validation)
+export function validatePrompts(prompts: string[], maxWords: number = 4000): { valid: string[]; invalid: string[]; warnings: string[] } {
   const valid: string[] = [];
   const invalid: string[] = [];
+  const warnings: string[] = [];
   
   prompts.forEach(prompt => {
     const trimmed = prompt.trim();
@@ -184,8 +270,21 @@ export function validatePrompts(prompts: string[]): { valid: string[]; invalid: 
       return;
     }
     
-    // Kiểm tra độ dài tối đa (Gemini có giới hạn)
-    if (trimmed.length > 2000) {
+    // Kiểm tra số từ
+    const wordCount = countWords(trimmed);
+    if (wordCount > maxWords) {
+      invalid.push(prompt);
+      warnings.push(`Text with ${wordCount} words exceeds limit of ${maxWords} words`);
+      return;
+    }
+    
+    // Cảnh báo nếu số từ rất ít (có thể quá ngắn cho TTS)
+    if (wordCount < 5) {
+      warnings.push(`Text with only ${wordCount} words may be too short for quality TTS`);
+    }
+    
+    // Kiểm tra độ dài tối đa (characters - backup check)
+    if (trimmed.length > 20000) { // Increased for TTS chunks
       invalid.push(prompt);
       return;
     }
@@ -193,13 +292,13 @@ export function validatePrompts(prompts: string[]): { valid: string[]; invalid: 
     // Kiểm tra ký tự đặc biệt có thể gây vấn đề
     const hasProblematicChars = /[<>{}[\]\\`]/.test(trimmed);
     if (hasProblematicChars) {
-      console.warn(`Prompt may contain problematic characters: ${trimmed.substring(0, 50)}...`);
+      warnings.push(`Text may contain problematic characters: ${trimmed.substring(0, 50)}...`);
     }
     
     valid.push(trimmed);
   });
   
-  return { valid, invalid };
+  return { valid, invalid, warnings };
 }
 
 // Format prompt cho Gemini API

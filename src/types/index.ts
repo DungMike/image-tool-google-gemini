@@ -52,6 +52,12 @@ export interface ParsedPrompts {
   filename?: string;
 }
 
+export interface ChunkingConfig {
+  sentencesPerChunk: number; // 1-20, default 5
+  maxWordsPerChunk: number; // max 4000, default 2000
+  enabled: boolean;
+}
+
 export interface BatchGenerationProgress {
   total: number;
   completed: number;
@@ -118,6 +124,7 @@ export interface TTSGenerationConfig {
   model: TTSModel;
   voiceName: string;
   customPrompt?: string;
+  chunkingConfig?: ChunkingConfig;
 }
 
 export interface TTSBatchProgress {
@@ -126,6 +133,8 @@ export interface TTSBatchProgress {
   failed: number;
   current?: string;
 }
+
+export type TTSProgressCallback = (progress: TTSBatchProgress, completedVoices?: GeneratedVoice[]) => void;
 
 export interface TTSRegenerateModalProps {
   isOpen: boolean;
