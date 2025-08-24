@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import pLimit from 'p-limit';
 import type { GeneratedImage, GenerationConfig, BatchGenerationProgress, ImagenModel, ImagenModelInfo } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, type ServiceType } from './apiKeyRotation';
+import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime } from './apiKeyRotation';
 import { formatPromptForGemini } from './promptParser';
 
 const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
@@ -130,6 +130,8 @@ async function generateSingleImage(
     } else {
       throw new Error('No images generated from API response');
     }
+    
+    throw new Error('No valid image generated');
     
   } catch (error) {
     console.error(`Error generating image for prompt "${prompt}":`, error);

@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog } from '@headlessui/react';
 import { XMarkIcon, ArrowPathIcon, LightBulbIcon } from '@heroicons/react/24/outline';
 import type { RegenerateModalProps, ImagenModel } from '@/types';
-import { getExamplePrompts } from '@/utils/promptParser';
 import { ModelSelector } from './ModelSelector';
 
 export function RegenerateModal({

@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import pLimit from 'p-limit';
-import type { GeneratedVoice, TTSGenerationConfig, TTSBatchProgress, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, type ServiceType } from './apiKeyRotation';
+import type { GeneratedVoice, TTSGenerationConfig, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
+import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime } from './apiKeyRotation';
 
 const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
 

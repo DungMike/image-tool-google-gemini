@@ -1,6 +1,5 @@
-import React from 'react';
 import { ChevronDownIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-import type { TTSModel, TTSModelInfo } from '@/types';
+import type { TTSModel } from '@/types';
 import { TTS_MODELS } from '@/utils/ttsGeneration';
 
 interface TTSModelSelectorProps {

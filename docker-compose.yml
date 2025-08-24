@@ -1,0 +1,22 @@
+services:
+  # Development environment
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    container_name: image-tool-app
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - .env
+    command: npm run dev
+
+networks:
+  default:
+    name: image-tool-network

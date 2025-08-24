@@ -1,9 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { 
   SpeakerWaveIcon, 
   ArrowDownTrayIcon, 
-  Cog6ToothIcon,
   InformationCircleIcon 
 } from '@heroicons/react/24/outline';
 
@@ -23,7 +22,6 @@ import { getApiKeysStats } from '@/utils/apiKeyRotation';
 // Types
 import type { 
   GeneratedVoice, 
-  UploadedFile, 
   TTSGenerationConfig, 
   TTSBatchProgress,
   TTSModel,
@@ -33,7 +31,7 @@ import type {
 export function VoiceGeneration() {
   // Input state
   const [textareaValue, setTextareaValue] = useState('');
-  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+
   const [textsPerVoice, setTextsPerVoice] = useState(1);
   const [selectedModel, setSelectedModel] = useState<TTSModel>('gemini-2.5-flash-preview-tts');
   const [selectedVoice, setSelectedVoice] = useState('Kore');
@@ -86,7 +84,7 @@ export function VoiceGeneration() {
       }
       
       // Parse and validate texts with chunking
-      const parsedTexts = await parsePrompts(textareaValue, uploadedFile || undefined, chunkingConfig);
+      const parsedTexts = await parsePrompts(textareaValue, undefined, chunkingConfig);
       const { valid: validTexts, invalid: invalidTexts, warnings } = validatePrompts(
         parsedTexts.prompts, 
         chunkingConfig.maxWordsPerChunk
@@ -211,7 +209,7 @@ export function VoiceGeneration() {
     } finally {
       setIsGenerating(false);
     }
-  }, [textareaValue, uploadedFile, textsPerVoice, selectedModel, selectedVoice, customPrompt, chunkingConfig]);
+  }, [textareaValue, textsPerVoice, selectedModel, selectedVoice, customPrompt, chunkingConfig]);
 
   // Handle single voice regeneration
   const handleRegenerateVoice = useCallback((voiceId: string, currentText: string, currentVoice: string, currentCustomPrompt?: string) => {
@@ -405,8 +403,6 @@ export function VoiceGeneration() {
               <TTSInput
                 textareaValue={textareaValue}
                 onTextareaChange={setTextareaValue}
-                uploadedFile={uploadedFile}
-                onFileUpload={setUploadedFile}
                 textsPerVoice={textsPerVoice}
                 onTextsPerVoiceChange={setTextsPerVoice}
                 selectedModel={selectedModel}
@@ -424,7 +420,7 @@ export function VoiceGeneration() {
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <button
                   onClick={handleGenerate}
-                  disabled={isGenerating || (!textareaValue.trim() && !uploadedFile)}
+                  disabled={isGenerating || !textareaValue.trim()}
                   className="btn-primary w-full py-3 text-base"
                 >
                   {isGenerating ? (
@@ -440,7 +436,7 @@ export function VoiceGeneration() {
                   )}
                 </button>
                 
-                {!textareaValue.trim() && !uploadedFile && (
+                {!textareaValue.trim() && (
                   <p className="text-sm text-gray-500 text-center mt-2">
                     Enter texts or upload a file to get started
                   </p>

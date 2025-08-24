@@ -1,7 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { DocumentArrowUpIcon, XMarkIcon, InformationCircleIcon, SpeakerWaveIcon } from '@heroicons/react/24/outline';
-import type { UploadedFile, FileType, TTSModel, ChunkingConfig } from '@/types';
-import { detectFileType, readFileContent, fileTemplates } from '@/utils/promptParser';
+import { useState, useCallback } from 'react';
+import { InformationCircleIcon, SpeakerWaveIcon } from '@heroicons/react/24/outline';
+import type { TTSModel, ChunkingConfig } from '@/types';
 import { toast } from 'react-toastify';
 import { TTSModelSelector } from './TTSModelSelector';
 import { VoiceSelector } from './VoiceSelector';
@@ -9,8 +8,6 @@ import { VoiceSelector } from './VoiceSelector';
 interface TTSInputProps {
   textareaValue: string;
   onTextareaChange: (value: string) => void;
-  uploadedFile: UploadedFile | null;
-  onFileUpload: (file: UploadedFile | null) => void;
   textsPerVoice: number;
   onTextsPerVoiceChange: (value: number) => void;
   selectedModel: TTSModel;
@@ -27,8 +24,6 @@ interface TTSInputProps {
 export function TTSInput({
   textareaValue,
   onTextareaChange,
-  uploadedFile,
-  onFileUpload,
   textsPerVoice,
   onTextsPerVoiceChange,
   selectedModel,
@@ -41,78 +36,7 @@ export function TTSInput({
   onChunkingConfigChange,
   disabled = false,
 }: TTSInputProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [showGuidance, setShowGuidance] = useState(false);
-
-  // Handle file upload
-  const handleFileUpload = useCallback(async (file: File) => {
-    try {
-      const fileType = detectFileType(file.name);
-      
-      if (!fileType) {
-        toast.error('Unsupported file type. Please upload CSV, JSON, or TXT files.');
-        return;
-      }
-      
-      // Kiểm tra kích thước file (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('File size too large. Please upload files smaller than 10MB.');
-        return;
-      }
-      
-      const content = await readFileContent(file);
-      
-      const uploadedFile: UploadedFile = {
-        file,
-        type: fileType,
-        content,
-      };
-      
-      onFileUpload(uploadedFile);
-      toast.success(`File "${file.name}" uploaded successfully!`);
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      toast.error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }, [onFileUpload]);
-
-  // Handle drag and drop
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleFileUpload(files[0]);
-    }
-  }, [handleFileUpload]);
-
-  // Handle file input change
-  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileUpload(files[0]);
-    }
-  }, [handleFileUpload]);
-
-  // Remove uploaded file
-  const handleRemoveFile = useCallback(() => {
-    onFileUpload(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [onFileUpload]);
 
   // Load example texts
   const handleLoadExamples = useCallback(() => {
@@ -126,30 +50,6 @@ export function TTSInput({
     onTextareaChange(examples.join('\n'));
     toast.info('Example texts loaded!');
   }, [onTextareaChange]);
-
-  // Download template files
-  const handleDownloadTemplate = useCallback((type: FileType) => {
-    const content = fileTemplates[type];
-    const filename = `texts_template.${type}`;
-    const mimeTypes = {
-      csv: 'text/csv',
-      json: 'application/json',
-      txt: 'text/plain',
-    };
-    
-    const blob = new Blob([content], { type: mimeTypes[type] });
-    const url = window.URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    window.URL.revokeObjectURL(url);
-    toast.success(`Template file "${filename}" downloaded!`);
-  }, []);
 
   return (
     <div className="space-y-6">

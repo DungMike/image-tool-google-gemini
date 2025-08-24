@@ -1,4 +1,4 @@
-import type { ApiKeyStatus, ServiceApiKeyStatus, ApiKeyRotationState } from '@/types';
+import type { ApiKeyStatus, ApiKeyRotationState } from '@/types';
 
 const STORAGE_KEY = 'gemini_api_keys_status';
 
@@ -90,11 +90,11 @@ function resetDailyCountIfNeeded(keyStatus: ApiKeyStatus): void {
 }
 
 // Kiểm tra rate limit per minute cho service cụ thể
-function checkMinuteRateLimit(keyStatus: ApiKeyStatus, service: ServiceType): boolean {
+function checkMinuteRateLimit(keyStatus: ApiKeyStatus): boolean {
   const now = Date.now();
   const oneMinuteAgo = now - 60 * 1000;
   
-  const rateLimit = service === 'image' ? IMAGE_RATE_LIMIT_PER_MINUTE : VOICE_RATE_LIMIT_PER_MINUTE;
+
   
   // Nếu lần sử dụng cuối cách đây ít hơn 1 phút và đã đạt limit per minute
   if (keyStatus.lastUsed > oneMinuteAgo) {
@@ -135,7 +135,7 @@ export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string):
     }
     
     // Kiểm tra minute rate limit
-    if (!checkMinuteRateLimit(keyStatus, service)) {
+    if (!checkMinuteRateLimit(keyStatus)) {
       continue;
     }
     

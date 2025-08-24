@@ -1,9 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { 
   SparklesIcon, 
   ArrowDownTrayIcon, 
-  Cog6ToothIcon,
   InformationCircleIcon 
 } from '@heroicons/react/24/outline';
 

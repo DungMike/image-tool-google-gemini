@@ -1,6 +1,5 @@
-import React from 'react';
 import { ChevronDownIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-import type { ImagenModel, ImagenModelInfo } from '@/types';
+import type { ImagenModel } from '@/types';
 import { IMAGEN_MODELS } from '@/utils/imageGeneration';
 
 interface ModelSelectorProps {
