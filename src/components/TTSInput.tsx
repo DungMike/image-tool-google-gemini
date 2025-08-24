@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { DocumentArrowUpIcon, XMarkIcon, InformationCircleIcon, SpeakerWaveIcon } from '@heroicons/react/24/outline';
-import type { UploadedFile, FileType, TTSModel } from '@/types';
+import type { UploadedFile, FileType, TTSModel, ChunkingConfig } from '@/types';
 import { detectFileType, readFileContent, fileTemplates } from '@/utils/promptParser';
 import { toast } from 'react-toastify';
 import { TTSModelSelector } from './TTSModelSelector';
@@ -19,6 +19,8 @@ interface TTSInputProps {
   onVoiceChange: (voice: string) => void;
   customPrompt: string;
   onCustomPromptChange: (prompt: string) => void;
+  chunkingConfig: ChunkingConfig;
+  onChunkingConfigChange: (config: ChunkingConfig) => void;
   disabled?: boolean;
 }
 
@@ -35,6 +37,8 @@ export function TTSInput({
   onVoiceChange,
   customPrompt,
   onCustomPromptChange,
+  chunkingConfig,
+  onChunkingConfigChange,
   disabled = false,
 }: TTSInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -357,6 +361,84 @@ export function TTSInput({
             Higher numbers will use more API quota
           </p>
         </div>
+      </div>
+
+      {/* Text Chunking Configuration */}
+      <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-700">Text Chunking</h3>
+            <p className="text-xs text-gray-500">Combine multiple sentences into single audio files</p>
+          </div>
+          <label className="inline-flex items-center">
+            <input
+              type="checkbox"
+              checked={chunkingConfig.enabled}
+              onChange={(e) => onChunkingConfigChange({ ...chunkingConfig, enabled: e.target.checked })}
+              disabled={disabled}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <span className="ml-2 text-sm text-gray-600">Enable</span>
+          </label>
+        </div>
+        
+        {chunkingConfig.enabled && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Sentences per Chunk */}
+            <div className="space-y-2">
+              <label htmlFor="sentences-per-chunk" className="block text-sm font-medium text-gray-700">
+                Sentences per Chunk
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="sentences-per-chunk"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={chunkingConfig.sentencesPerChunk}
+                  onChange={(e) => onChunkingConfigChange({ 
+                    ...chunkingConfig, 
+                    sentencesPerChunk: Math.max(1, Math.min(20, parseInt(e.target.value) || 1))
+                  })}
+                  disabled={disabled}
+                  className="input-field w-20"
+                />
+                <span className="text-xs text-gray-500">(1-20)</span>
+              </div>
+            </div>
+            
+            {/* Max Words per Chunk */}
+            <div className="space-y-2">
+              <label htmlFor="max-words-chunk" className="block text-sm font-medium text-gray-700">
+                Max Words per Chunk
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="max-words-chunk"
+                  type="number"
+                  min="100"
+                  max="4000"
+                  value={chunkingConfig.maxWordsPerChunk}
+                  onChange={(e) => onChunkingConfigChange({ 
+                    ...chunkingConfig, 
+                    maxWordsPerChunk: Math.max(100, Math.min(4000, parseInt(e.target.value) || 2000))
+                  })}
+                  disabled={disabled}
+                  className="input-field w-24"
+                />
+                <span className="text-xs text-gray-500">(≤4000)</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {chunkingConfig.enabled && (
+          <div className="text-xs text-gray-600 space-y-1 pt-2 border-t border-gray-200">
+            <p>• Gom nhiều câu ngắn thành một đoạn để tạo audio dài hơn</p>
+            <p>• Giúp tối ưu hóa việc tạo audio từ văn bản có nhiều câu ngắn</p>
+            <p>• Mặc định: 5 câu/chunk, tối đa 2000 từ/chunk</p>
+          </div>
+        )}
       </div>
     </div>
   );

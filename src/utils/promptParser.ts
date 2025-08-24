@@ -14,14 +14,24 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(word => word.length > 0).length;
 }
 
-// Split text into sentences (basic sentence splitting)
+// Split text into sentences (improved sentence splitting)
 export function splitIntoSentences(text: string): string[] {
-  // Basic sentence splitting - can be improved with more sophisticated logic
-  return text
-    .split(/[.!?]+/)
+  // Split by sentence endings, but preserve the punctuation
+  const sentences = text
+    .split(/(?<=[.!?])\s+/) // Split after sentence endings followed by whitespace
     .map(sentence => sentence.trim())
-    .filter(sentence => sentence.length > 0)
-    .map(sentence => sentence + (sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? '' : '.'));
+    .filter(sentence => sentence.length > 0);
+  
+  // If no sentences found with punctuation, treat each line as a sentence
+  if (sentences.length === 0 || (sentences.length === 1 && !sentences[0].match(/[.!?]/))) {
+    return text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => line.endsWith('.') || line.endsWith('!') || line.endsWith('?') ? line : line + '.');
+  }
+  
+  return sentences;
 }
 
 // Group sentences into chunks based on configuration
@@ -64,23 +74,35 @@ export function chunkSentences(sentences: string[], config: ChunkingConfig): str
 // Process prompts with chunking
 export function processPromptsWithChunking(prompts: string[], config: ChunkingConfig): string[] {
   if (!config.enabled) {
+    console.log('📝 Chunking disabled, returning original prompts:', prompts.length);
     return prompts;
   }
 
-  const allChunks: string[] = [];
+  console.log('📝 Processing prompts with chunking:', {
+    originalPrompts: prompts.length,
+    config
+  });
 
+  // Combine all prompts into sentences first
+  const allSentences: string[] = [];
+  
   for (const prompt of prompts) {
-    // Split prompt into sentences
     const sentences = splitIntoSentences(prompt);
-    
-    // Group sentences into chunks
-    const chunks = chunkSentences(sentences, config);
-    
-    // Add chunks to result
-    allChunks.push(...chunks);
+    console.log(`📝 Prompt "${prompt.substring(0, 50)}..." split into ${sentences.length} sentences`);
+    allSentences.push(...sentences);
   }
 
-  return allChunks;
+  console.log(`📝 Total sentences to chunk: ${allSentences.length}`);
+
+  // Group all sentences into chunks
+  const chunks = chunkSentences(allSentences, config);
+  
+  console.log(`📝 Created ${chunks.length} chunks from ${allSentences.length} sentences`);
+  chunks.forEach((chunk, index) => {
+    console.log(`📝 Chunk ${index + 1}: ${countWords(chunk)} words - "${chunk.substring(0, 100)}..."`);
+  });
+
+  return chunks;
 }
 
 // Detect file type từ extension

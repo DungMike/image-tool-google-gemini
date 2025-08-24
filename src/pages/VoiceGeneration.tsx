@@ -395,71 +395,7 @@ export function VoiceGeneration() {
               </div>
             </div>
 
-            {/* Chunking Configuration */}
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Cog6ToothIcon className="w-5 h-5 text-purple-600" />
-                <h3 className="text-sm font-medium text-gray-900">Text Chunking</h3>
-              </div>
-              
-              <div className="space-y-3">
-                {/* Enable Chunking Toggle */}
-                <div className="flex items-center justify-between">
-                  <label className="text-xs text-gray-700">Enable Chunking</label>
-                  <input
-                    type="checkbox"
-                    checked={chunkingConfig.enabled}
-                    onChange={(e) => setChunkingConfig(prev => ({ ...prev, enabled: e.target.checked }))}
-                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                  />
-                </div>
-                
-                {chunkingConfig.enabled && (
-                  <>
-                    {/* Sentences per Chunk */}
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1">
-                        Sentences per Chunk (1-20)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={chunkingConfig.sentencesPerChunk}
-                        onChange={(e) => setChunkingConfig(prev => ({ 
-                          ...prev, 
-                          sentencesPerChunk: Math.max(1, Math.min(20, parseInt(e.target.value) || 1))
-                        }))}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
-                    
-                    {/* Max Words per Chunk */}
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1">
-                        Max Words per Chunk (≤4000)
-                      </label>
-                      <input
-                        type="number"
-                        min="100"
-                        max="4000"
-                        value={chunkingConfig.maxWordsPerChunk}
-                        onChange={(e) => setChunkingConfig(prev => ({ 
-                          ...prev, 
-                          maxWordsPerChunk: Math.max(100, Math.min(4000, parseInt(e.target.value) || 2000))
-                        }))}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
-                    
-                    <div className="text-xs text-gray-500 pt-1 border-t">
-                      <p>• Gom nhiều câu thành 1 chunk để tạo audio dài hơn</p>
-                      <p>• Giúp tối ưu cho văn bản ngắn</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+
           </div>
 
           {/* Main Content Area */}
@@ -479,6 +415,8 @@ export function VoiceGeneration() {
                 onVoiceChange={setSelectedVoice}
                 customPrompt={customPrompt}
                 onCustomPromptChange={setCustomPrompt}
+                chunkingConfig={chunkingConfig}
+                onChunkingConfigChange={setChunkingConfig}
                 disabled={isGenerating}
               />
               
