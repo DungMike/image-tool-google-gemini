@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import pLimit from 'p-limit';
 import type { GeneratedImage, GenerationConfig, BatchGenerationProgress, ImagenModel, ImagenModelInfo } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime } from './apiKeyRotation';
+import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, type ServiceType } from './apiKeyRotation';
 import { formatPromptForGemini } from './promptParser';
 
 const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
@@ -112,25 +112,28 @@ async function generateSingleImage(
       },
     });
     
-    // Lấy ảnh đầu tiên từ response
+    // lấy tất cả images
+    
     if (response.generatedImages && response.generatedImages.length > 0) {
-      const generatedImage = response.generatedImages[0];
+      for (const generatedImage of response.generatedImages) {
+        const imageBytes = generatedImage.image?.imageBytes;
+        if (!imageBytes) {
+          throw new Error('No image bytes generated from API response');
+        }
+        const base64Image = `data:image/png;base64,${imageBytes}`;
+        markApiKeyUsed('image', keyIndex, true);
+        return base64Image;
+      }
       
       // Convert image bytes thành base64 data URL
-      const imageBytes = generatedImage.image.imageBytes;
-      const base64Image = `data:image/png;base64,${imageBytes}`;
       
-      // Đánh dấu key đã được sử dụng thành công
-      markApiKeyUsed(keyIndex, true);
-      
-      return base64Image;
     } else {
       throw new Error('No images generated from API response');
     }
     
   } catch (error) {
     console.error(`Error generating image for prompt "${prompt}":`, error);
-    markApiKeyUsed(keyIndex, false);
+    markApiKeyUsed('image', keyIndex, false);
     throw error;
   }
 }
@@ -140,7 +143,7 @@ export async function generateImageWithRotation(
   prompt: string, 
   model: ImagenModel = 'imagen-3.0-generate-002'
 ): Promise<string> {
-  const keyInfo = getNextAvailableApiKey();
+  const keyInfo = getNextAvailableApiKey('image');
   
   if (!keyInfo) {
     throw new Error('No available API keys. All keys have reached their daily limit.');
@@ -244,7 +247,7 @@ export async function batchGenerateImages(
     
     // Đợi giữa các batch để tránh rate limit
     if (i + batchSize < tasks.length) {
-      const waitTime = calculateWaitTime();
+      const waitTime = calculateWaitTime('image');
       console.log(`Waiting ${waitTime}ms before next batch...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }

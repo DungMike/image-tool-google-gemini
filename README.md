@@ -1,6 +1,10 @@
-# Batch Image Generator with Google Imagen API
+# AI Content Generator - Images & Voices
 
-Một ứng dụng web chạy local để tạo hàng loạt ảnh từ danh sách prompt sử dụng Google Imagen API (thông qua thư viện @google/genai). Ứng dụng hỗ trợ xử lý song song, xoay vòng API keys để tránh rate limit, lựa chọn model Imagen, và các tính năng nâng cao như regenerate ảnh và export ZIP.
+Một ứng dụng web chạy local để tạo hàng loạt ảnh và voice từ danh sách prompts/texts sử dụng Google AI APIs. Ứng dụng hỗ trợ xử lý song song, xoay vòng API keys để tránh rate limit, và các tính năng nâng cao như regenerate content và export ZIP.
+
+## 🎯 Hai chế độ chính:
+- **Image Generation**: Tạo ảnh từ prompts bằng Google Imagen API
+- **Voice Generation**: Tạo voice từ texts bằng Google Gemini TTS API
 
 ## ✨ Tính năng chính
 
@@ -11,26 +15,45 @@ Một ứng dụng web chạy local để tạo hàng loạt ảnh từ danh sá
 - **Example prompts**: Load sẵn các prompt mẫu chất lượng cao
 
 ### 🚀 Generation mạnh mẽ
+#### Image Generation
 - **Imagen Models**: Hỗ trợ 4 models Imagen (3.0, 4.0 Standard, Ultra, Fast)
 - **Model Selection**: Lựa chọn model phù hợp với nhu cầu (tốc độ vs chất lượng)
-- **Batch processing**: Tạo nhiều ảnh cùng lúc với xử lý song song
+
+#### Voice Generation  
+- **TTS Models**: Gemini 2.5 Flash TTS (100/day) và Pro TTS (50/day)
+- **30+ Voices**: Đa dạng giọng đọc với đặc tính khác nhau (bright, warm, smooth, etc.)
+- **Custom Prompts**: Thêm cảm xúc và phong cách đọc ("cheerfully", "slowly", etc.)
+
+#### Chung
+- **Batch processing**: Tạo nhiều content cùng lúc với xử lý song song
 - **API key rotation**: Tự động xoay vòng nhiều API keys để tránh rate limit
-- **Rate limit handling**: Thông minh xử lý giới hạn 10 req/phút, 70 req/ngày per key
+- **Rate limit handling**: Thông minh xử lý giới hạn per minute và per day
 - **Retry logic**: Tự động retry với exponential backoff
 - **Progress tracking**: Theo dõi tiến độ chi tiết real-time
 
-### 🖼️ Gallery & Management
+### 🖼️ Content Management
+#### Image Gallery
 - **Responsive gallery**: Hiển thị ảnh dạng grid responsive
 - **Image preview**: Xem ảnh full size trong tab mới
 - **Individual download**: Tải từng ảnh riêng lẻ
-- **Regenerate**: Popup modal để chỉnh sửa prompt và tạo lại ảnh
-- **Filter & stats**: Lọc ảnh theo trạng thái, xem thống kê
+- **Regenerate**: Modal để chỉnh sửa prompt và model, tạo lại ảnh
+
+#### Voice Gallery
+- **Audio player**: Play/pause voice trực tiếp trong gallery
+- **Voice info**: Hiển thị voice name, custom prompt
+- **Individual download**: Tải từng file audio riêng lẻ
+- **Regenerate**: Modal để chỉnh sửa text, voice, model và custom prompt
+
+#### Chung
+- **Filter & stats**: Lọc content theo trạng thái, xem thống kê
+- **Batch operations**: Xử lý nhiều items cùng lúc
 
 ### 📦 Export & Download
-- **ZIP export**: Tải tất cả ảnh thành công dưới dạng ZIP
-- **Metadata included**: File manifest.json và README.txt trong ZIP
+- **ZIP export**: Tải tất cả images/voices thành công dưới dạng ZIP
+- **Metadata included**: File manifest.json và README.txt trong ZIP  
 - **Progress tracking**: Theo dõi tiến độ export
 - **Size estimation**: Ước tính kích thước file trước khi export
+- **Individual exports**: Tải từng item với metadata riêng biệt
 
 ### 🔧 Monitoring & Control
 - **API key status**: Dashboard theo dõi usage của từng key

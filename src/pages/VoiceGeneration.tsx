@@ -1,45 +1,47 @@
 import React, { useState, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { 
-  SparklesIcon, 
+  SpeakerWaveIcon, 
   ArrowDownTrayIcon, 
   Cog6ToothIcon,
   InformationCircleIcon 
 } from '@heroicons/react/24/outline';
 
 // Components
-import { PromptInput } from '@/components/PromptInput';
-import { ImageGallery } from '@/components/ImageGallery';
-import { RegenerateModal } from '@/components/RegenerateModal';
+import { TTSInput } from '@/components/TTSInput';
+import { VoiceGallery } from '@/components/VoiceGallery';
+import { TTSRegenerateModal } from '@/components/TTSRegenerateModal';
 import { ApiKeyStatus } from '@/components/ApiKeyStatus';
 import { BatchProgress } from '@/components/BatchProgress';
 
 // Utils
 import { parsePrompts, validatePrompts } from '@/utils/promptParser';
-import { batchGenerateImages, regenerateImage } from '@/utils/imageGeneration';
-import { exportImagesToZip, validateExport, estimateZipSize } from '@/utils/zipExport';
+import { batchGenerateVoices, regenerateVoice, TTS_MODELS } from '@/utils/ttsGeneration';
+import { exportVoicesToZip, validateVoiceExport, estimateZipSize } from '@/utils/audioExport';
 import { getApiKeysStats } from '@/utils/apiKeyRotation';
 
 // Types
 import type { 
-  GeneratedImage, 
+  GeneratedVoice, 
   UploadedFile, 
-  GenerationConfig, 
-  BatchGenerationProgress,
-  ImagenModel 
+  TTSGenerationConfig, 
+  TTSBatchProgress,
+  TTSModel 
 } from '@/types';
 
-export function Home() {
+export function VoiceGeneration() {
   // Input state
   const [textareaValue, setTextareaValue] = useState('');
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
-  const [imagesPerPrompt, setImagesPerPrompt] = useState(1);
-  const [selectedModel, setSelectedModel] = useState<ImagenModel>('imagen-3.0-generate-002');
+  const [textsPerVoice, setTextsPerVoice] = useState(1);
+  const [selectedModel, setSelectedModel] = useState<TTSModel>('gemini-2.5-flash-preview-tts');
+  const [selectedVoice, setSelectedVoice] = useState('Kore');
+  const [customPrompt, setCustomPrompt] = useState('');
   
   // Generation state
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [voices, setVoices] = useState<GeneratedVoice[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<BatchGenerationProgress>({
+  const [batchProgress, setBatchProgress] = useState<TTSBatchProgress>({
     total: 0,
     completed: 0,
     failed: 0,
@@ -48,14 +50,17 @@ export function Home() {
   // Modal state
   const [regenerateModal, setRegenerateModal] = useState<{
     isOpen: boolean;
-    imageId: string;
-    currentPrompt: string;
-    currentModel: ImagenModel;
+    voiceId: string;
+    currentText: string;
+    currentVoice: string;
+    currentModel: TTSModel;
+    currentCustomPrompt?: string;
   }>({
     isOpen: false,
-    imageId: '',
-    currentPrompt: '',
-    currentModel: 'imagen-3.0-generate-002',
+    voiceId: '',
+    currentText: '',
+    currentVoice: 'Kore',
+    currentModel: 'gemini-2.5-flash-preview-tts',
   });
   const [isRegenerating, setIsRegenerating] = useState(false);
   
@@ -65,33 +70,45 @@ export function Home() {
   // Handle batch generation
   const handleGenerate = useCallback(async () => {
     try {
-      // Check API keys availability for image service
+      // Check API keys availability for voice service
       const keyStats = getApiKeysStats();
-      if (keyStats.image.availableKeys === 0) {
-        toast.error('No available API keys for image generation. All keys have reached their daily limit.');
+      if (keyStats.voice.availableKeys === 0) {
+        toast.error('No available API keys for voice generation. All keys have reached their daily limit.');
         return;
       }
       
-      // Parse and validate prompts
-      const parsedPrompts = await parsePrompts(textareaValue, uploadedFile || undefined);
-      const { valid: validPrompts, invalid: invalidPrompts } = validatePrompts(parsedPrompts.prompts);
+      // Parse and validate texts
+      const parsedTexts = await parsePrompts(textareaValue, uploadedFile || undefined);
+      const { valid: validTexts, invalid: invalidTexts } = validatePrompts(parsedTexts.prompts);
       
-      if (invalidPrompts.length > 0) {
-        toast.warning(`${invalidPrompts.length} invalid prompts were skipped`);
+      if (invalidTexts.length > 0) {
+        toast.warning(`${invalidTexts.length} invalid texts were skipped`);
       }
       
-      if (validPrompts.length === 0) {
-        toast.error('No valid prompts found');
+      if (validTexts.length === 0) {
+        toast.error('No valid texts found');
         return;
       }
       
-      // Calculate total images to generate
-      const totalImages = validPrompts.length * imagesPerPrompt;
+      // Calculate total voices to generate
+      const totalVoices = validTexts.length * textsPerVoice;
       
-      // Warn if generating many images
-      if (totalImages > 20) {
+      // Get selected model info for rate limit checking
+      const modelInfo = TTS_MODELS.find(m => m.id === selectedModel);
+      const dailyLimit = modelInfo?.rateLimit.requestsPerDay || 50;
+      console.log("🚀 ~ VoiceGeneration ~ dailyLimit:", dailyLimit)
+      
+      // Warn if generating many voices or approaching limits
+      if (totalVoices > 20) {
         const confirm = window.confirm(
-          `You're about to generate ${totalImages} images. This may take a long time and use significant API quota. Continue?`
+          `You're about to generate ${totalVoices} voices. This may take a long time and use significant API quota. Continue?`
+        );
+        if (!confirm) return;
+      }
+      
+      if (totalVoices > dailyLimit * keyStats.voice.availableKeys) {
+        const confirm = window.confirm(
+          `Warning: You're requesting ${totalVoices} voices but have a daily limit of ${dailyLimit * keyStats.voice.availableKeys} across all keys. Some requests may fail. Continue?`
         );
         if (!confirm) return;
       }
@@ -99,42 +116,45 @@ export function Home() {
       // Initialize generation state
       setIsGenerating(true);
       setBatchProgress({
-        total: totalImages,
+        total: totalVoices,
         completed: 0,
         failed: 0,
       });
       
       // Clear previous results
-      setImages([]);
+      setVoices([]);
       
-      const config: GenerationConfig = {
-        imagesPerPrompt,
+      const config: TTSGenerationConfig = {
+        textsPerVoice,
         concurrentRequests: 5,
         model: selectedModel,
+        voiceName: selectedVoice,
+        customPrompt: customPrompt.trim() || undefined,
       };
+      console.log("🚀 ~ VoiceGeneration ~ config:", config)
       
       // Start generation with progress tracking
-      const results = await batchGenerateImages(
-        validPrompts,
+      const results = await batchGenerateVoices(
+        validTexts,
         config,
         (progress) => {
           setBatchProgress(progress);
         }
       );
       
-      // Update images state
-      setImages(results);
+      // Update voices state
+      setVoices(results);
       
       // Show completion toast
-      const successful = results.filter(img => img.status === 'success').length;
-      const failed = results.filter(img => img.status === 'error').length;
+      const successful = results.filter(voice => voice.status === 'success').length;
+      const failed = results.filter(voice => voice.status === 'error').length;
       
       if (successful > 0) {
-        toast.success(`Generated ${successful} images successfully!`);
+        toast.success(`Generated ${successful} voices successfully!`);
       }
       
       if (failed > 0) {
-        toast.warning(`${failed} images failed to generate`);
+        toast.warning(`${failed} voices failed to generate`);
       }
       
     } catch (error) {
@@ -143,25 +163,27 @@ export function Home() {
     } finally {
       setIsGenerating(false);
     }
-  }, [textareaValue, uploadedFile, imagesPerPrompt, selectedModel]);
+  }, [textareaValue, uploadedFile, textsPerVoice, selectedModel, selectedVoice, customPrompt]);
 
-  // Handle single image regeneration
-  const handleRegenerateImage = useCallback((imageId: string, currentPrompt: string) => {
+  // Handle single voice regeneration
+  const handleRegenerateVoice = useCallback((voiceId: string, currentText: string, currentVoice: string, currentCustomPrompt?: string) => {
     setRegenerateModal({
       isOpen: true,
-      imageId,
-      currentPrompt,
-      currentModel: selectedModel, // Use current selected model
+      voiceId,
+      currentText,
+      currentVoice,
+      currentModel: selectedModel,
+      currentCustomPrompt,
     });
   }, [selectedModel]);
 
   // Handle regenerate modal submit
-  const handleRegenerateSubmit = useCallback(async (newPrompt: string, model?: ImagenModel) => {
-    const { imageId } = regenerateModal;
-    const originalImage = images.find(img => img.id === imageId);
+  const handleRegenerateSubmit = useCallback(async (newText: string, voiceName: string, model?: TTSModel, customPrompt?: string) => {
+    const { voiceId } = regenerateModal;
+    const originalVoice = voices.find(voice => voice.id === voiceId);
     
-    if (!originalImage) {
-      toast.error('Original image not found');
+    if (!originalVoice) {
+      toast.error('Original voice not found');
       return;
     }
     
@@ -169,17 +191,17 @@ export function Home() {
     
     try {
       const useModel = model || selectedModel;
-      const newImage = await regenerateImage(imageId, newPrompt, originalImage, useModel);
+      const newVoice = await regenerateVoice(voiceId, newText, originalVoice, useModel, voiceName, customPrompt);
       
-      // Replace the original image with the new one
-      setImages(prev => prev.map(img => 
-        img.id === imageId ? newImage : img
+      // Replace the original voice with the new one
+      setVoices(prev => prev.map(voice => 
+        voice.id === voiceId ? newVoice : voice
       ));
       
-      if (newImage.status === 'success') {
-        toast.success('Image regenerated successfully!');
+      if (newVoice.status === 'success') {
+        toast.success('Voice regenerated successfully!');
       } else {
-        toast.error(`Regeneration failed: ${newImage.error}`);
+        toast.error(`Regeneration failed: ${newVoice.error}`);
       }
       
     } catch (error) {
@@ -188,14 +210,14 @@ export function Home() {
     } finally {
       setIsRegenerating(false);
     }
-  }, [regenerateModal, images, selectedModel]);
+  }, [regenerateModal, voices, selectedModel]);
 
-  // Handle export all images
+  // Handle export all voices
   const handleExportAll = useCallback(async () => {
-    const validation = validateExport(images);
+    const validation = validateVoiceExport(voices);
     
     if (!validation.canExport) {
-      toast.error('No images available for export');
+      toast.error('No voices available for export');
       return;
     }
     
@@ -208,18 +230,18 @@ export function Home() {
     setIsExporting(true);
     
     try {
-      const { estimatedSizeMB } = estimateZipSize(images);
+      const { estimatedSizeMB } = estimateZipSize(voices);
       
-      await exportImagesToZip(
-        images,
-        `batch_generated_images_${new Date().toISOString().split('T')[0]}.zip`,
+      await exportVoicesToZip(
+        voices,
+        `batch_generated_voices_${new Date().toISOString().split('T')[0]}.zip`,
         (current, total) => {
           // Could add export progress here if needed
           console.log(`Exporting: ${current}/${total}`);
         }
       );
       
-      toast.success(`Successfully exported ${validation.successfulCount} images (~${estimatedSizeMB}MB)`);
+      toast.success(`Successfully exported ${validation.successfulCount} voices (~${estimatedSizeMB}MB)`);
       
     } catch (error) {
       console.error('Export error:', error);
@@ -227,14 +249,14 @@ export function Home() {
     } finally {
       setIsExporting(false);
     }
-  }, [images]);
+  }, [voices]);
 
   // Calculate stats for display
   const stats = {
-    total: images.length,
-    successful: images.filter(img => img.status === 'success').length,
-    failed: images.filter(img => img.status === 'error').length,
-    generating: images.filter(img => img.status === 'generating').length,
+    total: voices.length,
+    successful: voices.filter(voice => voice.status === 'success').length,
+    failed: voices.filter(voice => voice.status === 'error').length,
+    generating: voices.filter(voice => voice.status === 'generating').length,
   };
 
   return (
@@ -245,14 +267,14 @@ export function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary-100 rounded-lg">
-                <SparklesIcon className="w-8 h-8 text-primary-600" />
+                <SpeakerWaveIcon className="w-8 h-8 text-primary-600" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  Batch Image Generator
+                  Batch Voice Generator
                 </h1>
                 <p className="text-sm text-gray-600">
-                  Generate multiple images from prompts using Google Gemini API
+                  Generate multiple voices from texts using Google Gemini TTS API
                 </p>
               </div>
             </div>
@@ -272,7 +294,7 @@ export function Home() {
                 onClick={handleExportAll}
                 disabled={stats.successful === 0 || isExporting}
                 className="btn-secondary text-sm"
-                title="Download all successful images as ZIP"
+                title="Download all successful voices as ZIP"
               >
                 {isExporting ? (
                   <>
@@ -297,30 +319,30 @@ export function Home() {
           {/* Sidebar */}
           <div className="lg:col-span-1 space-y-6">
             {/* API Key Status */}
-            <ApiKeyStatus service="image" />
+            <ApiKeyStatus service="voice" />
             
-            {/* Generation Info */}
+            {/* TTS Info */}
             <div className="card p-4">
               <div className="flex items-center gap-2 mb-3">
                 <InformationCircleIcon className="w-5 h-5 text-blue-600" />
-                <h3 className="text-sm font-medium text-gray-900">Generation Info</h3>
+                <h3 className="text-sm font-medium text-gray-900">TTS Info</h3>
               </div>
               <div className="space-y-2 text-xs text-gray-600">
                 <div className="flex justify-between">
+                  <span>Flash Model:</span>
+                  <span>100/day per key</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pro Model:</span>
+                  <span>50/day per key</span>
+                </div>
+                <div className="flex justify-between">
                   <span>Rate Limit:</span>
-                  <span>10/min, 70/day per key</span>
+                  <span>10/min per key</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Concurrent:</span>
-                  <span>5 requests max</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Auto Retry:</span>
-                  <span>3 attempts</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Key Rotation:</span>
-                  <span>Automatic</span>
+                  <span>Voices:</span>
+                  <span>30+ available</span>
                 </div>
               </div>
             </div>
@@ -330,15 +352,19 @@ export function Home() {
           <div className="lg:col-span-3 space-y-8">
             {/* Input Section */}
             <div className="card p-6">
-              <PromptInput
+              <TTSInput
                 textareaValue={textareaValue}
                 onTextareaChange={setTextareaValue}
                 uploadedFile={uploadedFile}
                 onFileUpload={setUploadedFile}
-                imagesPerPrompt={imagesPerPrompt}
-                onImagesPerPromptChange={setImagesPerPrompt}
+                textsPerVoice={textsPerVoice}
+                onTextsPerVoiceChange={setTextsPerVoice}
                 selectedModel={selectedModel}
                 onModelChange={setSelectedModel}
+                selectedVoice={selectedVoice}
+                onVoiceChange={setSelectedVoice}
+                customPrompt={customPrompt}
+                onCustomPromptChange={setCustomPrompt}
                 disabled={isGenerating}
               />
               
@@ -352,19 +378,19 @@ export function Home() {
                   {isGenerating ? (
                     <>
                       <div className="loading-spinner w-5 h-5 mr-2" />
-                      Generating Images...
+                      Generating Voices...
                     </>
                   ) : (
                     <>
-                      <SparklesIcon className="w-5 h-5 mr-2" />
-                      Generate Images
+                      <SpeakerWaveIcon className="w-5 h-5 mr-2" />
+                      Generate Voices
                     </>
                   )}
                 </button>
                 
                 {!textareaValue.trim() && !uploadedFile && (
                   <p className="text-sm text-gray-500 text-center mt-2">
-                    Enter prompts or upload a file to get started
+                    Enter texts or upload a file to get started
                   </p>
                 )}
               </div>
@@ -376,10 +402,10 @@ export function Home() {
               isVisible={isGenerating || batchProgress.total > 0} 
             />
 
-            {/* Image Gallery */}
-            <ImageGallery
-              images={images}
-              onRegenerateImage={handleRegenerateImage}
+            {/* Voice Gallery */}
+            <VoiceGallery
+              voices={voices}
+              onRegenerateVoice={handleRegenerateVoice}
               isGenerating={isGenerating}
             />
           </div>
@@ -387,11 +413,13 @@ export function Home() {
       </main>
 
       {/* Regenerate Modal */}
-      <RegenerateModal
+      <TTSRegenerateModal
         isOpen={regenerateModal.isOpen}
         onClose={() => setRegenerateModal(prev => ({ ...prev, isOpen: false }))}
-        currentPrompt={regenerateModal.currentPrompt}
+        currentText={regenerateModal.currentText}
+        currentVoice={regenerateModal.currentVoice}
         currentModel={regenerateModal.currentModel}
+        currentCustomPrompt={regenerateModal.currentCustomPrompt}
         onRegenerate={handleRegenerateSubmit}
         isLoading={isRegenerating}
       />

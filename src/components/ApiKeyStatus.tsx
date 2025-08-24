@@ -11,11 +11,13 @@ import { toast } from 'react-toastify';
 
 interface ApiKeyStatusProps {
   className?: string;
+  service?: 'image' | 'voice' | 'both';
 }
 
-export function ApiKeyStatus({ className = '' }: ApiKeyStatusProps) {
+export function ApiKeyStatus({ className = '', service = 'both' }: ApiKeyStatusProps) {
   const [stats, setStats] = useState<ReturnType<typeof getApiKeysStats> | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'image' | 'voice'>(service === 'both' ? 'image' : service as 'image' | 'voice');
 
   // Load stats
   const loadStats = () => {
@@ -54,17 +56,60 @@ export function ApiKeyStatus({ className = '' }: ApiKeyStatusProps) {
     );
   }
 
+  // Get current service stats based on active tab or single service
+  const getCurrentServiceStats = () => {
+    if (!stats) return null;
+    
+    if (service !== 'both') {
+      return stats[service as 'image' | 'voice'];
+    }
+    
+    return stats[activeTab];
+  };
+
+  const currentStats = getCurrentServiceStats();
+
   const getStatusColor = () => {
-    if (stats.availableKeys === 0) return 'text-red-600';
-    if (stats.availableKeys <= stats.totalKeys * 0.3) return 'text-yellow-600';
+    if (!currentStats) return 'text-gray-600';
+    if (currentStats.availableKeys === 0) return 'text-red-600';
+    if (currentStats.availableKeys <= stats!.totalKeys * 0.3) return 'text-yellow-600';
     return 'text-green-600';
   };
 
   const getStatusIcon = () => {
-    if (stats.availableKeys === 0) {
-      return <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />;
+    if (!currentStats) {
+      return (
+        <svg
+          className="w-5 h-5 text-gray-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" strokeWidth="2" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 16v-4m0-4h.01" />
+        </svg>
+      );
     }
-    if (stats.availableKeys <= stats.totalKeys * 0.3) {
+    if (currentStats.availableKeys === 0) {
+      return (
+        <svg
+          className="w-5 h-5 text-red-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+      );
+    }
+    if (currentStats.availableKeys <= stats!.totalKeys * 0.3) {
       return <ExclamationTriangleIcon className="w-5 h-5 text-yellow-600" />;
     }
     return <CheckCircleIcon className="w-5 h-5 text-green-600" />;
@@ -81,9 +126,14 @@ export function ApiKeyStatus({ className = '' }: ApiKeyStatusProps) {
           <div className="flex items-center gap-3">
             {getStatusIcon()}
             <div>
-              <h3 className="text-sm font-medium text-gray-900">API Key Status</h3>
+              <h3 className="text-sm font-medium text-gray-900">
+                API Key Status
+                {service !== 'both' && (
+                  <span className="ml-2 text-xs text-gray-500 capitalize">({service})</span>
+                )}
+              </h3>
               <p className={`text-xs ${getStatusColor()}`}>
-                {stats.availableKeys} of {stats.totalKeys} keys available
+                {currentStats ? `${currentStats.availableKeys} of ${stats!.totalKeys} keys available` : 'Loading...'}
               </p>
             </div>
           </div>
@@ -107,76 +157,123 @@ export function ApiKeyStatus({ className = '' }: ApiKeyStatusProps) {
       {/* Expanded Content */}
       {isExpanded && (
         <div className="p-4 space-y-4">
+          {/* Service Tabs (only show if service is 'both') */}
+          {service === 'both' && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setActiveTab('image')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                  activeTab === 'image'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🖼️ Image Service
+              </button>
+              <button
+                onClick={() => setActiveTab('voice')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                  activeTab === 'voice'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🎵 Voice Service
+              </button>
+            </div>
+          )}
+
           {/* Overall Stats */}
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-lg font-semibold text-gray-900">{stats.totalKeys}</div>
-              <div className="text-xs text-gray-600">Total Keys</div>
+          {currentStats && (
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-lg font-semibold text-gray-900">{stats!.totalKeys}</div>
+                <div className="text-xs text-gray-600">Total Keys</div>
+              </div>
+              <div className="bg-green-50 rounded-lg p-3">
+                <div className="text-lg font-semibold text-green-700">{currentStats.availableKeys}</div>
+                <div className="text-xs text-green-600">Available</div>
+              </div>
+              <div className="bg-red-50 rounded-lg p-3">
+                <div className="text-lg font-semibold text-red-700">{currentStats.blockedKeys}</div>
+                <div className="text-xs text-red-600">Blocked</div>
+              </div>
             </div>
-            <div className="bg-green-50 rounded-lg p-3">
-              <div className="text-lg font-semibold text-green-700">{stats.availableKeys}</div>
-              <div className="text-xs text-green-600">Available</div>
-            </div>
-            <div className="bg-red-50 rounded-lg p-3">
-              <div className="text-lg font-semibold text-red-700">{stats.blockedKeys}</div>
-              <div className="text-xs text-red-600">Blocked</div>
-            </div>
-          </div>
+          )}
 
           {/* Individual Key Usage */}
-          <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Daily Usage per Key</h4>
-            <div className="space-y-2">
-              {Object.entries(stats.dailyUsage).map(([keyName, usage]) => {
-                const percentage = (usage / 70) * 100; // 70 is daily limit
-                const isNearLimit = percentage > 80;
-                const isAtLimit = percentage >= 100;
-                
-                return (
-                  <div key={keyName} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">{keyName}</span>
-                      <span className={`font-medium ${isAtLimit ? 'text-red-600' : isNearLimit ? 'text-yellow-600' : 'text-gray-700'}`}>
-                        {usage}/70
-                      </span>
+          {currentStats && (
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                Daily Usage per Key
+                {service === 'both' && (
+                  <span className="ml-2 text-xs text-gray-500 capitalize">({activeTab} service)</span>
+                )}
+              </h4>
+              <div className="space-y-2">
+                {Object.entries(currentStats.dailyUsage).map(([keyName, usage]) => {
+                  // Determine daily limit based on current service
+                  let dailyLimit = 70; // Default image limit
+                  if (service === 'voice' || (service === 'both' && activeTab === 'voice')) {
+                    dailyLimit = 50; // Use Pro TTS limit as more restrictive
+                  }
+                  
+                  const percentage = (usage / dailyLimit) * 100;
+                  const isNearLimit = percentage > 80;
+                  const isAtLimit = percentage >= 100;
+                  
+                  return (
+                    <div key={keyName} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-600">{keyName}</span>
+                        <span className={`font-medium ${isAtLimit ? 'text-red-600' : isNearLimit ? 'text-yellow-600' : 'text-gray-700'}`}>
+                          {usage}/{dailyLimit}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            isAtLimit ? 'bg-red-500' : isNearLimit ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(percentage, 100)}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-300 ${
-                          isAtLimit ? 'bg-red-500' : isNearLimit ? 'bg-yellow-500' : 'bg-green-500'
-                        }`}
-                        style={{ width: `${Math.min(percentage, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Warnings and Info */}
-          {stats.availableKeys === 0 && (
+          {currentStats && currentStats.availableKeys === 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <div className="flex items-start gap-2">
                 <ExclamationTriangleIcon className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs">
-                  <p className="font-medium text-red-900">All API keys exhausted</p>
+                  <p className="font-medium text-red-900">
+                    All API keys exhausted
+                    {service === 'both' && <span className="capitalize"> ({activeTab} service)</span>}
+                  </p>
                   <p className="text-red-700 mt-1">
-                    All API keys have reached their daily limit. Please wait until tomorrow or add more keys.
+                    All API keys have reached their daily limit for this service. Please wait until tomorrow or add more keys.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {stats.availableKeys <= stats.totalKeys * 0.3 && stats.availableKeys > 0 && (
+          {currentStats && currentStats.availableKeys <= stats!.totalKeys * 0.3 && currentStats.availableKeys > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
               <div className="flex items-start gap-2">
                 <ExclamationTriangleIcon className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs">
-                  <p className="font-medium text-yellow-900">Low API key availability</p>
+                  <p className="font-medium text-yellow-900">
+                    Low API key availability
+                    {service === 'both' && <span className="capitalize"> ({activeTab} service)</span>}
+                  </p>
                   <p className="text-yellow-700 mt-1">
-                    Most API keys are near their daily limit. Consider adding more keys or reducing usage.
+                    Most API keys are near their daily limit for this service. Consider adding more keys or reducing usage.
                   </p>
                 </div>
               </div>
@@ -188,11 +285,26 @@ export function ApiKeyStatus({ className = '' }: ApiKeyStatusProps) {
             <div className="flex items-start gap-2">
               <KeyIcon className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs">
-                <p className="font-medium text-blue-900">Rate Limits</p>
+                <p className="font-medium text-blue-900">
+                  Rate Limits
+                  {service === 'both' && <span className="capitalize"> ({activeTab} service)</span>}
+                </p>
                 <ul className="text-blue-700 mt-1 space-y-0.5">
-                  <li>• 10 requests per minute per key</li>
-                  <li>• 70 requests per day per key</li>
+                  {(service === 'image' || (service === 'both' && activeTab === 'image')) && (
+                    <>
+                      <li>• 10 requests per minute per key</li>
+                      <li>• 70 requests per day per key (Imagen)</li>
+                    </>
+                  )}
+                  {(service === 'voice' || (service === 'both' && activeTab === 'voice')) && (
+                    <>
+                      <li>• 10 requests per minute per key</li>
+                      <li>• Flash TTS: 100 requests per day per key</li>
+                      <li>• Pro TTS: 50 requests per day per key</li>
+                    </>
+                  )}
                   <li>• Automatic key rotation enabled</li>
+                  <li>• Independent tracking per service</li>
                 </ul>
               </div>
             </div>
