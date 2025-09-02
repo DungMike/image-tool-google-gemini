@@ -29,7 +29,8 @@ export type ImagenModel =
   | 'imagen-3.0-generate-002'
   | 'imagen-4.0-generate-001'
   | 'imagen-4.0-ultra-generate-001'
-  | 'imagen-4.0-fast-generate-001';
+  | 'imagen-4.0-fast-generate-001'
+  | 'gemini-2.5-flash-image-preview';
 
 export interface ImagenModelInfo {
   id: ImagenModel;

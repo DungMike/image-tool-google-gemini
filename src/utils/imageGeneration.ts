@@ -36,6 +36,13 @@ export const IMAGEN_MODELS: ImagenModelInfo[] = [
     speed: 'Fast',
     quality: 'Standard',
   },
+  {
+    id: 'gemini-2.5-flash-image-preview',
+    name: 'Gemini 2.5 Flash Image Preview',
+    description: 'Native image generation with Gemini 2.5 Flash model',
+    speed: 'Fast',
+    quality: 'High',
+  },
 ];
 
 // Khởi tạo Google GenAI client với API key
@@ -87,7 +94,7 @@ async function withRetry<T>(
   throw lastError!;
 }
 
-// Generate single image using Imagen API
+// Generate single image using different APIs based on model
 async function generateSingleImage(
   prompt: string,
   keyIndex: number,
@@ -99,42 +106,63 @@ async function generateSingleImage(
   try {
     const formattedPrompt = formatPromptForGemini(prompt);
     
-    // Sử dụng Imagen API để tạo ảnh thực tế
-    const response = await genAI.models.generateImages({
-      model,
-      prompt: formattedPrompt,
-      config: {
-        numberOfImages: 1,
-        // Có thể thêm các config khác như:
-        // aspectRatio: '1:1',
-        // safetyFilterLevel: 'block_some',
-        // personGeneration: 'dont_allow'
-      },
-    });
-    
-    // lấy tất cả images
-    
-    if (response.generatedImages && response.generatedImages.length > 0) {
-      for (const generatedImage of response.generatedImages) {
-        const imageBytes = generatedImage.image?.imageBytes;
-        if (!imageBytes) {
-          throw new Error('No image bytes generated from API response');
+    // Switch between different APIs based on model type
+    switch (model) {
+      case 'gemini-2.5-flash-image-preview': {
+        // Use generateContent API for Gemini models
+        const response = await genAI.models.generateContent({
+          model,
+          contents: formattedPrompt,
+        });
+        
+        // Handle Gemini response structure
+        if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0];
+          if (candidate.content && candidate.content.parts) {
+            for (const part of candidate.content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                const base64Image = `data:image/png;base64,${part.inlineData.data}`;
+                markApiKeyUsed('image', keyIndex, true);
+                return base64Image;
+              }
+            }
+          }
         }
-        const base64Image = `data:image/png;base64,${imageBytes}`;
-        markApiKeyUsed('image', keyIndex, true);
-        return base64Image;
+        throw new Error('No image data found in Gemini response');
       }
       
-      // Convert image bytes thành base64 data URL
-      
-    } else {
-      throw new Error('No images generated from API response');
+      default: {
+        // Use generateImages API for Imagen models
+        const response = await genAI.models.generateImages({
+          model,
+          prompt: formattedPrompt,
+          config: {
+            numberOfImages: 1,
+            // Có thể thêm các config khác như:
+            aspectRatio: '16:9',
+            // safetyFilterLevel: 'block_some',
+            // personGeneration: 'dont_allow'
+          },
+        });
+        
+        // Handle Imagen response structure
+        if (response.generatedImages && response.generatedImages.length > 0) {
+          for (const generatedImage of response.generatedImages) {
+            const imageBytes = generatedImage.image?.imageBytes;
+            if (!imageBytes) {
+              throw new Error('No image bytes generated from API response');
+            }
+            const base64Image = `data:image/png;base64,${imageBytes}`;
+            markApiKeyUsed('image', keyIndex, true);
+            return base64Image;
+          }
+        }
+        throw new Error('No images generated from Imagen API response');
+      }
     }
     
-    throw new Error('No valid image generated');
-    
   } catch (error) {
-    console.error(`Error generating image for prompt "${prompt}":`, error);
+    console.error(`Error generating image for prompt "${prompt}" with model "${model}":`, error);
     markApiKeyUsed('image', keyIndex, false);
     throw error;
   }

@@ -33,15 +33,15 @@ export function ModelSelector({ selectedModel, onModelChange, disabled = false }
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <label htmlFor="model-selector" className="text-sm font-medium text-gray-700">
-          Imagen Model
+          Image Model
         </label>
         <div className="group relative">
           <InformationCircleIcon className="w-4 h-4 text-gray-400 cursor-help" />
           <div className="absolute left-0 top-6 z-10 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg">
-            Choose the Imagen model based on your needs:
+            Choose the image generation model based on your needs:
             <br />• Fast: Quick generation, good quality
             <br />• Standard: Balanced speed and quality  
-            <br />• Ultra: Highest quality, slower generation
+            <br />• High/Ultra: Highest quality, slower generation
           </div>
         </div>
       </div>
