@@ -12,15 +12,20 @@ function sanitizeFilename(text: string, maxLength: number = 50): string {
     .toLowerCase();
 }
 
-// Tạo tên file duy nhất
+// Tạo tên file duy nhất - sử dụng ordered filename nếu có
 function generateUniqueFilename(
-  text: string, 
-  voiceName: string,
+  voice: GeneratedVoice,
   index: number, 
   extension: string = 'wav'
 ): string {
-  const sanitizedText = sanitizeFilename(text);
-  const sanitizedVoice = sanitizeFilename(voiceName);
+  // Ưu tiên sử dụng filename có thứ tự từ voice object
+  if (voice.filename) {
+    return `${voice.filename}.${extension}`;
+  }
+  
+  // Fallback về format cũ nếu không có filename
+  const sanitizedText = sanitizeFilename(voice.text);
+  const sanitizedVoice = sanitizeFilename(voice.voiceName);
   const timestamp = Date.now();
   return `${index + 1}_${sanitizedVoice}_${sanitizedText}_${timestamp}.${extension}`;
 }
@@ -44,7 +49,7 @@ export async function exportVoicesToZip(
       exportDate: new Date().toISOString(),
       totalVoices: successfulVoices.length,
       voices: successfulVoices.map((voice, index) => ({
-        filename: generateUniqueFilename(voice.text, voice.voiceName, index),
+        filename: generateUniqueFilename(voice, index),
         originalText: voice.originalText,
         finalText: voice.text,
         voiceName: voice.voiceName,
@@ -52,6 +57,9 @@ export async function exportVoicesToZip(
         generatedAt: new Date(voice.timestamp).toISOString(),
         voiceId: voice.id,
         duration: voice.duration,
+        chunkIndex: voice.chunkIndex,
+        voiceIndex: voice.voiceIndex,
+        orderedFilename: voice.filename,
       })),
     };
     
@@ -86,20 +94,23 @@ Generated with Batch Voice Generator using Google Gemini TTS API
         onProgress?.(index, successfulVoices.length);
         
         const base64Data = await audioDataToBase64(voice.audioData!);
-        const filename = generateUniqueFilename(voice.text, voice.voiceName, index);
+        const filename = generateUniqueFilename(voice, index);
         
         zip.file(filename, base64Data, { base64: true });
         
-        console.log(`Added voice ${index + 1}/${successfulVoices.length}: ${filename}`);
+        console.log(`Added voice ${index + 1}/${successfulVoices.length}: ${filename} (${voice.filename || 'legacy format'})`);
       } catch (error) {
         console.error(`Failed to add voice ${index + 1} to ZIP:`, error);
         // Thêm error file thay vì audio
-        const errorFilename = generateUniqueFilename(voice.text, voice.voiceName, index, 'error.txt');
+        const errorFilename = generateUniqueFilename(voice, index, 'error.txt');
         const errorContent = `Failed to export voice
 Original Text: ${voice.originalText}
 Final Text: ${voice.text}
 Voice Name: ${voice.voiceName}
 Custom Prompt: ${voice.customPrompt || 'None'}
+Ordered Filename: ${voice.filename || 'N/A'}
+Chunk Index: ${voice.chunkIndex ?? 'N/A'}
+Voice Index: ${voice.voiceIndex ?? 'N/A'}
 Error: ${error instanceof Error ? error.message : 'Unknown error'}
 Generated At: ${new Date(voice.timestamp).toLocaleString()}`;
         
@@ -142,7 +153,7 @@ export async function exportSingleVoiceWithMetadata(
   }
   
   const zip = new JSZip();
-  const audioName = filename || generateUniqueFilename(voice.text, voice.voiceName, 0);
+  const audioName = filename || generateUniqueFilename(voice, 0);
   const metadataName = audioName.replace(/\.[^/.]+$/, '_metadata.json');
   
   try {

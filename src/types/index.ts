@@ -123,6 +123,10 @@ export interface GeneratedVoice {
   error?: string;
   timestamp: number;
   duration?: number; // in seconds
+  // New fields for ordering
+  chunkIndex: number; // Thứ tự chunk (0, 1, 2, ...)
+  voiceIndex: number; // Thứ tự voice trong cùng text (0, 1, 2, ...)
+  filename?: string; // Tên file được tạo dựa trên thứ tự
 }
 
 export interface TTSGenerationConfig {

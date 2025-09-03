@@ -1,10 +1,19 @@
 import { useState, useCallback } from 'react';
+import { useAtom } from 'jotai';
 import { toast } from 'react-toastify';
 import { 
   SpeakerWaveIcon, 
   ArrowDownTrayIcon, 
   InformationCircleIcon 
 } from '@heroicons/react/24/outline';
+
+// Atoms
+import { 
+  sortedVoicesAtom, 
+  updateVoiceAtom, 
+  resetVoicesAtom,
+  upsertVoiceAtom 
+} from '@/state/atoms';
 
 // Components
 import { TTSInput } from '@/components/TTSInput';
@@ -21,7 +30,6 @@ import { getApiKeysStats } from '@/utils/apiKeyRotation';
 
 // Types
 import type { 
-  GeneratedVoice, 
   TTSGenerationConfig, 
   TTSBatchProgress,
   TTSModel,
@@ -44,8 +52,13 @@ export function VoiceGeneration() {
     enabled: false,
   });
   
+  // Atom-based voice management
+  const [voices] = useAtom(sortedVoicesAtom);
+  const [, updateVoice] = useAtom(updateVoiceAtom);
+  const [, resetVoices] = useAtom(resetVoicesAtom);
+  const [, upsertVoice] = useAtom(upsertVoiceAtom);
+  
   // Generation state
-  const [voices, setVoices] = useState<GeneratedVoice[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState<TTSBatchProgress>({
     total: 0,
@@ -126,7 +139,8 @@ export function VoiceGeneration() {
         if (!confirm) return;
       }
       
-      // Initialize generation state
+      // Reset voices and initialize generation state
+      resetVoices();
       setIsGenerating(true);
       setBatchProgress({
         total: totalVoices,
@@ -143,53 +157,43 @@ export function VoiceGeneration() {
         chunkingConfig,
       };
       
-      // Initialize voices with "generating" status to show them immediately
-      const initialVoices: GeneratedVoice[] = [];
-      validTexts.forEach((text, textIndex) => {
-        for (let voiceIndex = 0; voiceIndex < textsPerVoice; voiceIndex++) {
-          const voiceId = `${textIndex}-${voiceIndex}-${Date.now()}`;
-          initialVoices.push({
-            id: voiceId,
-            text,
-            originalText: text,
-            customPrompt: config.customPrompt,
-            voiceName: config.voiceName,
-            status: 'generating',
-            timestamp: Date.now(),
-          });
-        }
+      console.log('🎯 Starting voice generation with config:', {
+        textsCount: validTexts.length,
+        textsPerVoice,
+        totalVoices,
+        chunkingEnabled: chunkingConfig.enabled,
+        chunkingConfig: chunkingConfig.enabled ? chunkingConfig : 'disabled'
       });
       
-      // Set initial voices to show UI immediately
-      setVoices(initialVoices);
+      // Generate single timestamp for this batch to ensure consistent IDs
+      const timestamp = Date.now();
       
       // Start generation with progress tracking and real-time voice updates
+      // batchGenerateVoices will create initial voices and update them as they complete
       const results = await batchGenerateVoices(
         validTexts,
         config,
         (progress, completedVoices) => {
           setBatchProgress(progress);
           
-          // Update voices in real-time as they complete
+          // Update voices in real-time as they complete/initialize
           if (completedVoices && completedVoices.length > 0) {
-            setVoices(prev => {
-              // Create a map of existing voices by ID for efficient lookup
-              const existingVoicesMap = new Map(prev.map(voice => [voice.id, voice]));
-              
-              // Update with completed voices
-              completedVoices.forEach(voice => {
-                existingVoicesMap.set(voice.id, voice);
-              });
-              
-              // Return updated array maintaining order
-              return Array.from(existingVoicesMap.values());
+            console.log('📥 Received voices in callback:', completedVoices.map(v => ({ id: v.id, filename: v.filename, status: v.status })));
+            // Use upsertVoice to handle both add and update
+            completedVoices.forEach(voice => {
+              upsertVoice(voice);
             });
           }
-        }
+        },
+        timestamp // Pass consistent timestamp
       );
       
-      // Final update to ensure all voices are displayed
-      setVoices(results);
+      console.log('🏁 Voice generation completed. Final results:', {
+        total: results.length,
+        successful: results.filter(v => v.status === 'success').length,
+        failed: results.filter(v => v.status === 'error').length,
+        orderedFilenames: results.map(v => v.filename)
+      });
       
       // Show completion toast
       const successful = results.filter(voice => voice.status === 'success').length;
@@ -209,7 +213,7 @@ export function VoiceGeneration() {
     } finally {
       setIsGenerating(false);
     }
-  }, [textareaValue, textsPerVoice, selectedModel, selectedVoice, customPrompt, chunkingConfig]);
+  }, [textareaValue, textsPerVoice, selectedModel, selectedVoice, customPrompt, chunkingConfig, resetVoices, upsertVoice]);
 
   // Handle single voice regeneration
   const handleRegenerateVoice = useCallback((voiceId: string, currentText: string, currentVoice: string, currentCustomPrompt?: string) => {
@@ -239,13 +243,11 @@ export function VoiceGeneration() {
       const useModel = model || selectedModel;
       const newVoice = await regenerateVoice(voiceId, newText, originalVoice, useModel, voiceName, customPrompt);
       
-      // Replace the original voice with the new one
-      setVoices(prev => prev.map(voice => 
-        voice.id === voiceId ? newVoice : voice
-      ));
+      // Update the voice in atom storage
+      updateVoice({ id: voiceId, voice: newVoice });
       
       if (newVoice.status === 'success') {
-        toast.success('Voice regenerated successfully!');
+        toast.success(`Voice regenerated successfully! New filename: ${newVoice.filename}`);
       } else {
         toast.error(`Regeneration failed: ${newVoice.error}`);
       }
@@ -256,7 +258,7 @@ export function VoiceGeneration() {
     } finally {
       setIsRegenerating(false);
     }
-  }, [regenerateModal, voices, selectedModel]);
+  }, [regenerateModal, voices, selectedModel, updateVoice]);
 
   // Handle export all voices
   const handleExportAll = useCallback(async () => {

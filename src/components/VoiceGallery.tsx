@@ -118,9 +118,12 @@ function VoiceCard({ voice, onRegenerate }: VoiceCardProps) {
     
     setIsDownloading(true);
     try {
-      const filename = `voice_${voice.voiceName}_${voice.id}.wav`;
+      // Use the ordered filename if available, otherwise fallback to old format
+      const filename = voice.filename 
+        ? `${voice.filename}.wav`
+        : `voice_${voice.voiceName}_${voice.id}.wav`;
       await downloadAudio(voice.audioData, filename);
-      toast.success('Audio downloaded successfully!');
+      toast.success(`Audio downloaded: ${filename}`);
     } catch (error) {
       console.error('Error downloading audio:', error);
       toast.error('Failed to download audio');
@@ -146,7 +149,12 @@ function VoiceCard({ voice, onRegenerate }: VoiceCardProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <SpeakerWaveIcon className="w-5 h-5 text-primary-600" />
-            <span className="font-medium text-gray-900">{voice.voiceName}</span>
+            <div>
+              <div className="font-medium text-gray-900">{voice.voiceName}</div>
+              {voice.filename && (
+                <div className="text-xs text-gray-500 font-mono">{voice.filename}</div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {voice.status === 'generating' && (

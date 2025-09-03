@@ -120,9 +120,30 @@ function formatTextForTTS(text: string, customPrompt?: string): string {
   return text;
 }
 
-// Convert raw PCM data to proper WAV format
+// Generate filename based on chunk and voice index
+function generateOrderedFilename(chunkIndex: number, voiceIndex: number, textsPerVoice: number): string {
+  const chunkStr = (chunkIndex + 1).toString().padStart(3, '0'); // 001, 002, 003...
+  
+  if (textsPerVoice > 1) {
+    const voiceStr = String.fromCharCode(65 + voiceIndex); // A, B, C...
+    return `chunk_${chunkStr}_voice_${voiceStr}`;
+  } else {
+    return `chunk_${chunkStr}`;
+  }
+}
+
+// Create ordered voice ID
+function createOrderedVoiceId(chunkIndex: number, voiceIndex: number, timestamp: number): string {
+  const chunkStr = chunkIndex.toString().padStart(3, '0');
+  const voiceStr = voiceIndex.toString().padStart(2, '0');
+  return `voice_${chunkStr}_${voiceStr}_${timestamp}`;
+}
+
+// Convert raw PCM data to proper WAV format (browser-compatible, following Google Gemini TTS docs)
 async function convertRawPCMToWAV(rawPCMBase64: string): Promise<string> {
   try {
+    console.log('🔄 Converting raw PCM to WAV (browser-compatible), data length:', rawPCMBase64.length);
+    
     // Decode the base64 PCM data
     const pcmData = atob(rawPCMBase64);
     const pcmBytes = new Uint8Array(pcmData.length);
@@ -130,61 +151,44 @@ async function convertRawPCMToWAV(rawPCMBase64: string): Promise<string> {
       pcmBytes[i] = pcmData.charCodeAt(i);
     }
     
-    console.log('🔄 Converting raw PCM to WAV, data length:', pcmBytes.length);
+    console.log('📦 PCM buffer size:', pcmBytes.length, 'bytes');
     
-    // Try different sample rates that Google might use
-    const possibleSampleRates = [24000, 22050, 16000, 44100, 48000];
-    const numChannels = 1; // Mono (Google TTS is typically mono)
-    const bitsPerSample = 16; // 16-bit (most common)
-    
-    // Calculate expected duration for each sample rate to find the most reasonable one
-    let bestSampleRate = 24000; // Default
-    const expectedDurationRange = [1, 30]; // Expect 1-30 seconds for typical TTS
-    
-    for (const sampleRate of possibleSampleRates) {
-      const bytesPerSample = bitsPerSample / 8;
-      const bytesPerSecond = sampleRate * numChannels * bytesPerSample;
-      const duration = pcmBytes.length / bytesPerSecond;
-      
-      console.log(`📊 Sample rate ${sampleRate}Hz would give duration: ${duration.toFixed(2)}s`);
-      
-      if (duration >= expectedDurationRange[0] && duration <= expectedDurationRange[1]) {
-        bestSampleRate = sampleRate;
-        console.log(`✅ Using sample rate: ${bestSampleRate}Hz (duration: ${duration.toFixed(2)}s)`);
-        break;
-      }
-    }
-    
+    // Google Gemini TTS parameters (from official docs)
+    const channels = 1;        // Mono
+    const sampleRate = 24000;  // 24kHz (Google Gemini TTS default)
+    const bitsPerSample = 16;  // 16-bit
     const bytesPerSample = bitsPerSample / 8;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = bestSampleRate * blockAlign;
+    const blockAlign = channels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
     const dataSize = pcmBytes.length;
     const fileSize = 36 + dataSize;
     
-    console.log(`🎵 WAV parameters: ${bestSampleRate}Hz, ${numChannels} channel(s), ${bitsPerSample}-bit`);
+    // Calculate duration
+    const duration = dataSize / byteRate;
+    console.log(`🎵 Google Gemini TTS parameters: ${sampleRate}Hz, ${channels} channel(s), ${bitsPerSample}-bit, duration: ${duration.toFixed(2)}s`);
     
-    // Create WAV header
+    // Create WAV header (44 bytes) - following WAV format specification
     const header = new ArrayBuffer(44);
     const view = new DataView(header);
     
     // RIFF chunk descriptor
-    view.setUint32(0, 0x52494646, false); // "RIFF"
-    view.setUint32(4, fileSize, true); // File size - 8
-    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(0, 0x52494646, false);    // "RIFF" (big-endian)
+    view.setUint32(4, fileSize, true);       // File size - 8 (little-endian)
+    view.setUint32(8, 0x57415645, false);    // "WAVE" (big-endian)
     
     // fmt sub-chunk
-    view.setUint32(12, 0x666d7420, false); // "fmt "
-    view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
-    view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
-    view.setUint16(22, numChannels, true); // NumChannels
-    view.setUint32(24, bestSampleRate, true); // SampleRate
-    view.setUint32(28, byteRate, true); // ByteRate
-    view.setUint16(32, blockAlign, true); // BlockAlign
-    view.setUint16(34, bitsPerSample, true); // BitsPerSample
+    view.setUint32(12, 0x666d7420, false);   // "fmt " (big-endian)
+    view.setUint32(16, 16, true);            // Subchunk1Size (16 for PCM) (little-endian)
+    view.setUint16(20, 1, true);             // AudioFormat (1 for PCM) (little-endian)
+    view.setUint16(22, channels, true);      // NumChannels (little-endian)
+    view.setUint32(24, sampleRate, true);    // SampleRate (little-endian)
+    view.setUint32(28, byteRate, true);      // ByteRate (little-endian)
+    view.setUint16(32, blockAlign, true);    // BlockAlign (little-endian)
+    view.setUint16(34, bitsPerSample, true); // BitsPerSample (little-endian)
     
     // data sub-chunk
-    view.setUint32(36, 0x64617461, false); // "data"
-    view.setUint32(40, dataSize, true); // Subchunk2Size
+    view.setUint32(36, 0x64617461, false);   // "data" (big-endian)
+    view.setUint32(40, dataSize, true);      // Subchunk2Size (little-endian)
     
     // Combine header and PCM data
     const wavBuffer = new Uint8Array(44 + dataSize);
@@ -198,8 +202,7 @@ async function convertRawPCMToWAV(rawPCMBase64: string): Promise<string> {
     }
     const base64WAV = btoa(binary);
     
-    const estimatedDuration = dataSize / byteRate;
-    console.log(`✅ Successfully converted raw PCM to WAV format (estimated duration: ${estimatedDuration.toFixed(2)}s)`);
+    console.log(`✅ Successfully converted PCM to WAV format (${wavBuffer.length} bytes, ${duration.toFixed(2)}s duration)`);
     
     return `data:audio/wav;base64,${base64WAV}`;
     
@@ -357,7 +360,8 @@ export async function generateVoiceWithRotation(
 export async function batchGenerateVoices(
   texts: string[],
   config: TTSGenerationConfig,
-  onProgress?: TTSProgressCallback
+  onProgress?: TTSProgressCallback,
+  batchTimestamp?: number
 ): Promise<GeneratedVoice[]> {
   console.log("🚀 ~ batchGenerateVoices ~ config:", config)
   
@@ -371,16 +375,19 @@ export async function batchGenerateVoices(
   const results: GeneratedVoice[] = [];
   let completed = 0;
   let failed = 0;
+  const timestamp = batchTimestamp || Date.now(); // Use provided timestamp or create new one
   
-  // Tạo tasks cho tất cả voices cần generate
+  // Tạo tasks cho tất cả voices cần generate với ordered IDs
   const tasks: Array<() => Promise<void>> = [];
   
-  texts.forEach((text, textIndex) => {
-    console.log("🚀 ~ batchGenerateVoices ~ text:", text)
+  texts.forEach((text, chunkIndex) => {
+    console.log(`🚀 ~ batchGenerateVoices ~ chunk ${chunkIndex + 1}:`, text)
     for (let voiceIndex = 0; voiceIndex < config.textsPerVoice; voiceIndex++) {
-      const voiceId = `${textIndex}-${voiceIndex}-${Date.now()}`;
+      // Tạo ordered ID và filename
+      const voiceId = createOrderedVoiceId(chunkIndex, voiceIndex, timestamp);
+      const filename = generateOrderedFilename(chunkIndex, voiceIndex, config.textsPerVoice);
       
-      // Khởi tạo voice object với status generating
+      // Khởi tạo voice object với status generating và thông tin ordering
       const voiceObj: GeneratedVoice = {
         id: voiceId,
         text,
@@ -388,7 +395,10 @@ export async function batchGenerateVoices(
         customPrompt: config.customPrompt,
         voiceName: config.voiceName,
         status: 'generating',
-        timestamp: Date.now(),
+        timestamp,
+        chunkIndex,
+        voiceIndex,
+        filename,
       };
       
       results.push(voiceObj);
@@ -410,7 +420,7 @@ export async function batchGenerateVoices(
             config.customPrompt
           );
           
-          // Cập nhật kết quả
+          // Cập nhật kết quả với audio data
           const resultIndex = results.findIndex(r => r.id === voiceId);
           if (resultIndex >= 0) {
             results[resultIndex] = {
@@ -425,7 +435,7 @@ export async function batchGenerateVoices(
           // Gửi completed voice qua callback để hiển thị real-time
           const completedVoice = results[resultIndex];
           if (completedVoice) {
-            console.log(`✅ Voice completed: ${completedVoice.id}`);
+            console.log(`✅ Voice completed: ${completedVoice.filename} (${completedVoice.id})`);
             onProgress?.({
               total: texts.length * config.textsPerVoice,
               completed,
@@ -435,7 +445,7 @@ export async function batchGenerateVoices(
           }
           
         } catch (error) {
-          console.error(`Failed to generate voice for text "${text}":`, error);
+          console.error(`Failed to generate voice for chunk ${chunkIndex + 1} "${text}":`, error);
           
           // Cập nhật kết quả với lỗi
           const resultIndex = results.findIndex(r => r.id === voiceId);
@@ -452,7 +462,7 @@ export async function batchGenerateVoices(
           // Gửi failed voice qua callback để hiển thị real-time
           const failedVoice = results[resultIndex];
           if (failedVoice) {
-            console.log(`❌ Voice failed: ${failedVoice.id}`);
+            console.log(`❌ Voice failed: ${failedVoice.filename} (${failedVoice.id})`);
             onProgress?.({
               total: texts.length * config.textsPerVoice,
               completed,
@@ -464,6 +474,16 @@ export async function batchGenerateVoices(
       }));
     }
   });
+  
+  // Send initial voices with "generating" status to UI immediately
+  if (onProgress) {
+    console.log('📤 Sending initial voices to UI:', results.map(v => ({ id: v.id, filename: v.filename, status: v.status })));
+    onProgress({
+      total: texts.length * config.textsPerVoice,
+      completed: 0,
+      failed: 0,
+    }, results);
+  }
   
   // Thực hiện tất cả tasks với rate limiting
   const batchSize = concurrentLimit || CONCURRENT_REQUESTS;
@@ -482,6 +502,16 @@ export async function batchGenerateVoices(
     }
   }
   
+  // Sắp xếp kết quả theo thứ tự trước khi trả về
+  results.sort((a, b) => {
+    if (a.chunkIndex !== b.chunkIndex) {
+      return a.chunkIndex - b.chunkIndex;
+    }
+    return a.voiceIndex - b.voiceIndex;
+  });
+  
+  console.log('📋 Final ordered results:', results.map(r => ({ filename: r.filename, status: r.status })));
+  
   return results;
 }
 
@@ -496,30 +526,44 @@ export async function regenerateVoice(
 ): Promise<GeneratedVoice> {
   try {
     const audioData = await generateVoiceWithRotation(newText, model, voiceName, customPrompt);
+    const timestamp = Date.now();
+    
+    // Tạo filename mới cho regenerated voice
+    const newFilename = originalVoice.filename 
+      ? `${originalVoice.filename}_regenerated`
+      : `regenerated_${timestamp}`;
     
     return {
       ...originalVoice,
-      id: `${voiceId}-regenerated-${Date.now()}`,
+      id: `${voiceId}-regenerated-${timestamp}`,
       text: newText,
       voiceName,
       customPrompt,
       audioData,
       status: 'success',
-      timestamp: Date.now(),
+      timestamp,
+      filename: newFilename,
       error: undefined,
     };
   } catch (error) {
     console.error(`Failed to regenerate voice:`, error);
+    const timestamp = Date.now();
+    
+    // Tạo filename mới cho failed regenerated voice
+    const newFilename = originalVoice.filename 
+      ? `${originalVoice.filename}_regenerated_failed`
+      : `regenerated_failed_${timestamp}`;
     
     return {
       ...originalVoice,
-      id: `${voiceId}-regenerated-${Date.now()}`,
+      id: `${voiceId}-regenerated-${timestamp}`,
       text: newText,
       voiceName,
       customPrompt,
       status: 'error',
       error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: Date.now(),
+      timestamp,
+      filename: newFilename,
     };
   }
 }
