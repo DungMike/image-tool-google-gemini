@@ -19,10 +19,11 @@ interface ImageGalleryProps {
 interface ImageCardProps {
   image: GeneratedImage;
   onRegenerate: (imageId: string, currentPrompt: string) => void;
+  onPreview: (url: string, alt: string) => void;
 }
 
 // Component cho từng image card
-function ImageCard({ image, onRegenerate }: ImageCardProps) {
+function ImageCard({ image, onRegenerate, onPreview }: ImageCardProps) {
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const [isImageError, setIsImageError] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -95,6 +96,7 @@ function ImageCard({ image, onRegenerate }: ImageCardProps) {
               `}
               onLoad={() => setIsImageLoaded(true)}
               onError={() => setIsImageError(true)}
+              onClick={() => onPreview(image.imageUrl, image.prompt)}
             />
             
             {isImageError && (
@@ -111,7 +113,7 @@ function ImageCard({ image, onRegenerate }: ImageCardProps) {
               <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-30 transition-all duration-200 group">
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <button
-                    onClick={() => window.open(image.imageUrl, '_blank')}
+                    onClick={() => onPreview(image.imageUrl, image.prompt)}
                     className="p-1.5 bg-white rounded-full shadow-lg hover:bg-gray-50 transition-colors duration-200"
                     title="View full size"
                   >
@@ -190,6 +192,18 @@ function ImageCard({ image, onRegenerate }: ImageCardProps) {
 // Main ImageGallery component
 export function ImageGallery({ images, onRegenerateImage, isGenerating = false }: ImageGalleryProps) {
   const [filter, setFilter] = useState<'all' | 'success' | 'error' | 'generating'>('all');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewAlt, setPreviewAlt] = useState<string>('');
+
+  const openPreview = useCallback((url: string, alt: string) => {
+    setPreviewUrl(url);
+    setPreviewAlt(alt);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    setPreviewUrl(null);
+    setPreviewAlt('');
+  }, []);
 
   // Filter images based on selected filter
   const filteredImages = images.filter(image => {
@@ -283,12 +297,29 @@ export function ImageGallery({ images, onRegenerateImage, isGenerating = false }
               key={image.id}
               image={image}
               onRegenerate={onRegenerateImage}
+              onPreview={openPreview}
             />
           ))}
         </div>
       ) : (
         <div className="text-center py-8">
           <p className="text-gray-500">No images match the current filter.</p>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/70" onClick={closePreview} />
+          <div className="relative max-w-[95vw] max-h-[90vh] p-2">
+            <img src={previewUrl} alt={previewAlt} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+            <button
+              onClick={closePreview}
+              className="absolute top-2 right-2 bg-white/90 hover:bg-white text-gray-800 text-xs px-2 py-1 rounded shadow"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>

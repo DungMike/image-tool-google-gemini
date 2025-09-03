@@ -30,7 +30,8 @@ export type ImagenModel =
   | 'imagen-4.0-generate-001'
   | 'imagen-4.0-ultra-generate-001'
   | 'imagen-4.0-fast-generate-001'
-  | 'gemini-2.5-flash-image-preview';
+  | 'gemini-2.5-flash-image-preview'
+  | 'gemini-2.0-flash-preview-image-generation';
 
 export interface ImagenModelInfo {
   id: ImagenModel;
@@ -38,12 +39,17 @@ export interface ImagenModelInfo {
   description: string;
   speed: 'Fast' | 'Standard' | 'Slow';
   quality: 'Standard' | 'High' | 'Ultra';
+  rateLimitPerMinute?: number;
+  rateLimitPerDay?: number;
 }
+
+export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:2';
 
 export interface GenerationConfig {
   imagesPerPrompt: number;
   concurrentRequests: number;
   model: ImagenModel;
+  aspectRatio?: AspectRatio;
   safetySettings?: any;
 }
 

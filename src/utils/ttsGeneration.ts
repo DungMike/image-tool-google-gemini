@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import pLimit from 'p-limit';
 import type { GeneratedVoice, TTSGenerationConfig, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime } from './apiKeyRotation';
+import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, getApiKeys } from './apiKeyRotation';
 
 const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
 
@@ -252,6 +252,9 @@ async function generateSingleVoice(
       throw new Error('Invalid base64 audio data received from API');
     }
     
+    // Get model info for rate limit tracking
+    const modelInfo = TTS_MODELS.find(m => m.id === model);
+    
     // Log audio data info for debugging
     console.log('Audio data received:', {
       length: audioData.length,
@@ -280,21 +283,21 @@ async function generateSingleVoice(
       // Check if it's a standard WAV file
       if (headerString.includes('RIFF') && headerString.includes('WAVE')) {
         console.log('✅ Standard WAV format detected');
-        markApiKeyUsed('voice', keyIndex, true, model);
+        markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/wav;base64,${audioData}`;
       }
       
       // Check if it's MP3
       if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
         console.log('✅ MP3 format detected');
-        markApiKeyUsed('voice', keyIndex, true, model);
+        markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/mpeg;base64,${audioData}`;
       }
       
       // Check if it's OGG
       if (headerString.includes('OggS')) {
         console.log('✅ OGG format detected');
-        markApiKeyUsed('voice', keyIndex, true, model);
+        markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/ogg;base64,${audioData}`;
       }
       
@@ -303,7 +306,7 @@ async function generateSingleVoice(
       console.log('🔍 Raw data pattern:', Array.from(bytes.slice(0, 8)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' '));
       
       const convertedAudioData = await convertRawPCMToWAV(audioData);
-      markApiKeyUsed('voice', keyIndex, true, model);
+      markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
       return convertedAudioData;
       
     } catch (error) {
@@ -312,18 +315,19 @@ async function generateSingleVoice(
       try {
         console.log('🔄 Last resort: converting as raw PCM...');
         const convertedAudioData = await convertRawPCMToWAV(audioData);
-        markApiKeyUsed('voice', keyIndex, true, model);
+        markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return convertedAudioData;
       } catch (conversionError) {
         console.error('❌ PCM conversion also failed:', conversionError);
-        markApiKeyUsed('voice', keyIndex, true, model);
+        markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/wav;base64,${audioData}`;
       }
     }
     
   } catch (error) {
     console.error(`Error generating voice for text "${text}":`, error);
-    markApiKeyUsed('voice', keyIndex, false, model);
+    const modelInfo = TTS_MODELS.find(m => m.id === model);
+    markApiKeyUsed('voice', keyIndex, false, model, undefined, modelInfo?.rateLimit.requestsPerDay);
     throw error;
   }
 }
@@ -335,7 +339,8 @@ export async function generateVoiceWithRotation(
   voiceName: string = 'Kore',
   customPrompt?: string
 ): Promise<string> {
-  const keyInfo = getNextAvailableApiKey('voice', model);
+  const modelInfo = TTS_MODELS.find(m => m.id === model);
+  const keyInfo = getNextAvailableApiKey('voice', model, undefined, modelInfo?.rateLimit.requestsPerDay);
   
   if (!keyInfo) {
     throw new Error('No available API keys. All keys have reached their daily limit.');
@@ -355,7 +360,14 @@ export async function batchGenerateVoices(
   onProgress?: TTSProgressCallback
 ): Promise<GeneratedVoice[]> {
   console.log("🚀 ~ batchGenerateVoices ~ config:", config)
-  const limit = pLimit(CONCURRENT_REQUESTS);
+  
+  // Get model-specific concurrent requests limit
+  const modelInfo = TTS_MODELS.find(m => m.id === config.model);
+  const keys = getApiKeys();
+  const concurrentLimit = (modelInfo?.rateLimit.requestsPerMinute || CONCURRENT_REQUESTS) * keys.length;
+  console.log("🚀 ~ batchGenerateVoices ~ concurrentLimit:", concurrentLimit)
+  
+  const limit = pLimit(concurrentLimit);
   const results: GeneratedVoice[] = [];
   let completed = 0;
   let failed = 0;
@@ -454,7 +466,7 @@ export async function batchGenerateVoices(
   });
   
   // Thực hiện tất cả tasks với rate limiting
-  const batchSize = Math.min(10, CONCURRENT_REQUESTS);
+  const batchSize = concurrentLimit || CONCURRENT_REQUESTS;
   
   for (let i = 0; i < tasks.length; i += batchSize) {
     const batch = tasks.slice(i, i + batchSize);
@@ -464,7 +476,7 @@ export async function batchGenerateVoices(
     
     // Đợi giữa các batch để tránh rate limit
     if (i + batchSize < tasks.length) {
-      const waitTime = calculateWaitTime('voice');
+      const waitTime = calculateWaitTime('voice', modelInfo?.rateLimit.requestsPerMinute);
       console.log(`Waiting ${waitTime}ms before next batch...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }

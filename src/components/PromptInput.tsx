@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { DocumentArrowUpIcon, XMarkIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-import type { UploadedFile, FileType, ImagenModel } from '@/types';
+import type { UploadedFile, FileType, ImagenModel, AspectRatio } from '@/types';
 import { detectFileType, readFileContent, getExamplePrompts, fileTemplates } from '@/utils/promptParser';
 import { toast } from 'react-toastify';
 import { ModelSelector } from './ModelSelector';
@@ -14,6 +14,8 @@ interface PromptInputProps {
   onImagesPerPromptChange: (value: number) => void;
   selectedModel: ImagenModel;
   onModelChange: (model: ImagenModel) => void;
+  aspectRatio: AspectRatio;
+  onAspectRatioChange: (ratio: AspectRatio) => void;
   disabled?: boolean;
 }
 
@@ -26,6 +28,8 @@ export function PromptInput({
   onImagesPerPromptChange,
   selectedModel,
   onModelChange,
+  aspectRatio,
+  onAspectRatioChange,
   disabled = false,
 }: PromptInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -312,6 +316,27 @@ export function PromptInput({
           <p className="text-xs text-gray-500">
             Higher numbers will use more API quota
           </p>
+        </div>
+
+        {/* Aspect Ratio */}
+        <div className="flex items-center gap-4">
+          <label htmlFor="aspect-ratio" className="text-sm text-gray-600 whitespace-nowrap">
+            Aspect ratio:
+          </label>
+          <select
+            id="aspect-ratio"
+            value={aspectRatio}
+            onChange={(e) => onAspectRatioChange(e.target.value as AspectRatio)}
+            disabled={disabled}
+            className="input-field w-28"
+          >
+            <option value="16:9">16:9</option>
+            <option value="1:1">1:1</option>
+            <option value="4:3">4:3</option>
+            <option value="3:2">3:2</option>
+            <option value="9:16">9:16</option>
+          </select>
+          <p className="text-xs text-gray-500">Default is 16:9</p>
         </div>
       </div>
     </div>

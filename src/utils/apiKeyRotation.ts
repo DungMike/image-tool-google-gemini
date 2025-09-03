@@ -2,7 +2,7 @@ import type { ApiKeyStatus, ApiKeyRotationState } from '@/types';
 
 const STORAGE_KEY = 'gemini_api_keys_status';
 
-// Rate limits cho Image service (Imagen API)
+// Rate limits cho Image service (Imagen API) - default fallback
 const IMAGE_RATE_LIMIT_PER_DAY = 70; // Imagen daily limit
 const IMAGE_RATE_LIMIT_PER_MINUTE = 10; // Imagen per minute limit
 
@@ -94,8 +94,6 @@ function checkMinuteRateLimit(keyStatus: ApiKeyStatus): boolean {
   const now = Date.now();
   const oneMinuteAgo = now - 60 * 1000;
   
-
-  
   // Nếu lần sử dụng cuối cách đây ít hơn 1 phút và đã đạt limit per minute
   if (keyStatus.lastUsed > oneMinuteAgo) {
     // Đơn giản hóa: giả sử mỗi phút chỉ cho phép rate limit requests
@@ -107,7 +105,7 @@ function checkMinuteRateLimit(keyStatus: ApiKeyStatus): boolean {
 }
 
 // Lấy API key khả dụng tiếp theo cho service cụ thể
-export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string): { key: string; index: number } | null {
+export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string, imageDailyLimitOverride?: number, ttsDailyLimitOverride?: number): { key: string; index: number } | null {
   const keys = getApiKeys();
   if (keys.length === 0) return null;
   
@@ -124,9 +122,15 @@ export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string):
     // Kiểm tra daily limit dựa trên service và model
     let dailyLimit = IMAGE_RATE_LIMIT_PER_DAY;
     if (service === 'voice') {
-      dailyLimit = ttsModel === 'gemini-2.5-pro-preview-tts' 
-        ? VOICE_RATE_LIMIT_PER_DAY_PRO 
-        : VOICE_RATE_LIMIT_PER_DAY_FLASH;
+      if (ttsDailyLimitOverride) {
+        dailyLimit = ttsDailyLimitOverride;
+      } else {
+        dailyLimit = ttsModel === 'gemini-2.5-pro-preview-tts' 
+          ? VOICE_RATE_LIMIT_PER_DAY_PRO 
+          : VOICE_RATE_LIMIT_PER_DAY_FLASH;
+      }
+    } else if (service === 'image' && imageDailyLimitOverride) {
+      dailyLimit = imageDailyLimitOverride;
     }
     
     if (keyStatus.requestCount >= dailyLimit) {
@@ -149,7 +153,7 @@ export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string):
 }
 
 // Đánh dấu key đã được sử dụng cho service cụ thể
-export function markApiKeyUsed(service: ServiceType, keyIndex: number, success: boolean = true, ttsModel?: string): void {
+export function markApiKeyUsed(service: ServiceType, keyIndex: number, success: boolean = true, ttsModel?: string, imageDailyLimitOverride?: number, ttsDailyLimitOverride?: number): void {
   const keys = getApiKeys();
   if (keyIndex >= keys.length) return;
   
@@ -164,9 +168,15 @@ export function markApiKeyUsed(service: ServiceType, keyIndex: number, success: 
     // Kiểm tra xem có đạt daily limit không
     let dailyLimit = IMAGE_RATE_LIMIT_PER_DAY;
     if (service === 'voice') {
-      dailyLimit = ttsModel === 'gemini-2.5-pro-preview-tts' 
-        ? VOICE_RATE_LIMIT_PER_DAY_PRO 
-        : VOICE_RATE_LIMIT_PER_DAY_FLASH;
+      if (ttsDailyLimitOverride) {
+        dailyLimit = ttsDailyLimitOverride;
+      } else {
+        dailyLimit = ttsModel === 'gemini-2.5-pro-preview-tts' 
+          ? VOICE_RATE_LIMIT_PER_DAY_PRO 
+          : VOICE_RATE_LIMIT_PER_DAY_FLASH;
+      }
+    } else if (service === 'image' && imageDailyLimitOverride) {
+      dailyLimit = imageDailyLimitOverride;
     }
     
     if (keyStatus.requestCount >= dailyLimit) {
@@ -239,8 +249,8 @@ export function resetAllApiKeys(): void {
 }
 
 // Tính toán thời gian đợi để tránh rate limit per minute cho service cụ thể
-export function calculateWaitTime(service: ServiceType): number {
-  const rateLimit = service === 'image' ? IMAGE_RATE_LIMIT_PER_MINUTE : VOICE_RATE_LIMIT_PER_MINUTE;
+export function calculateWaitTime(service: ServiceType, imagePerMinuteOverride?: number): number {
+  const rateLimit = service === 'image' ? (imagePerMinuteOverride || IMAGE_RATE_LIMIT_PER_MINUTE) : VOICE_RATE_LIMIT_PER_MINUTE;
   // Đơn giản hóa: đợi giữa các batch để tránh rate limit per minute
   return Math.ceil(60 / rateLimit) * 1000;
 }

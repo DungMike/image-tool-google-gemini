@@ -7,6 +7,10 @@ import {
   ArrowPathIcon 
 } from '@heroicons/react/24/outline';
 import { getApiKeysStats, resetAllApiKeys } from '@/utils/apiKeyRotation';
+import { useAtom } from 'jotai';
+import { selectedModelAtom, selectedTTSModelAtom } from '@/state/atoms';
+import { IMAGEN_MODELS } from '@/utils/imageGeneration';
+import { TTS_MODELS } from '@/utils/ttsGeneration';
 import { toast } from 'react-toastify';
 
 interface ApiKeyStatusProps {
@@ -18,6 +22,8 @@ export function ApiKeyStatus({ className = '', service = 'both' }: ApiKeyStatusP
   const [stats, setStats] = useState<ReturnType<typeof getApiKeysStats> | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'image' | 'voice'>(service === 'both' ? 'image' : service as 'image' | 'voice');
+  const [selectedModel] = useAtom(selectedModelAtom);
+  const [selectedTTSModel] = useAtom(selectedTTSModelAtom);
 
   // Load stats
   const loadStats = () => {
@@ -35,6 +41,18 @@ export function ApiKeyStatus({ className = '', service = 'both' }: ApiKeyStatusP
     const interval = setInterval(loadStats, 30000); // Update every 30 seconds
     return () => clearInterval(interval);
   }, []);
+
+  // Derive current image daily limit from selected model
+  const currentImageDailyLimit = (() => {
+    const info = IMAGEN_MODELS.find(m => m.id === selectedModel);
+    return info?.rateLimitPerDay ?? 70;
+  })();
+
+  // Derive current TTS daily limit from selected model
+  const currentTTSDailyLimit = (() => {
+    const info = TTS_MODELS.find(m => m.id === selectedTTSModel);
+    return info?.rateLimit.requestsPerDay ?? 100;
+  })();
 
   // Handle reset all keys
   const handleResetKeys = () => {
@@ -213,9 +231,9 @@ export function ApiKeyStatus({ className = '', service = 'both' }: ApiKeyStatusP
               <div className="space-y-2">
                 {Object.entries(currentStats.dailyUsage).map(([keyName, usage]) => {
                   // Determine daily limit based on current service
-                  let dailyLimit = 70; // Default image limit
+                  let dailyLimit = currentImageDailyLimit; // Image limit per selected model
                   if (service === 'voice' || (service === 'both' && activeTab === 'voice')) {
-                    dailyLimit = 50; // Use Pro TTS limit as more restrictive
+                    dailyLimit = currentTTSDailyLimit; // TTS limit per selected model
                   }
                   
                   const percentage = (usage / dailyLimit) * 100;
@@ -292,15 +310,14 @@ export function ApiKeyStatus({ className = '', service = 'both' }: ApiKeyStatusP
                 <ul className="text-blue-700 mt-1 space-y-0.5">
                   {(service === 'image' || (service === 'both' && activeTab === 'image')) && (
                     <>
-                      <li>• 10 requests per minute per key</li>
-                      <li>• 70 requests per day per key (Imagen)</li>
+                      <li>• Per-minute limit depends on model</li>
+                      <li>• {currentImageDailyLimit} requests per day per key (current model)</li>
                     </>
                   )}
                   {(service === 'voice' || (service === 'both' && activeTab === 'voice')) && (
                     <>
-                      <li>• 10 requests per minute per key</li>
-                      <li>• Flash TTS: 100 requests per day per key</li>
-                      <li>• Pro TTS: 50 requests per day per key</li>
+                      <li>• Per-minute limit depends on model</li>
+                      <li>• {currentTTSDailyLimit} requests per day per key (current model)</li>
                     </>
                   )}
                   <li>• Automatic key rotation enabled</li>

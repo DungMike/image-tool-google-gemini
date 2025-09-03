@@ -25,15 +25,19 @@ import type {
   UploadedFile, 
   GenerationConfig, 
   BatchGenerationProgress,
-  ImagenModel 
+  ImagenModel,
+  AspectRatio 
 } from '@/types';
+import { useAtom } from 'jotai';
+import { selectedModelAtom, aspectRatioAtom } from '@/state/atoms';
 
 export function Home() {
   // Input state
   const [textareaValue, setTextareaValue] = useState('');
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [imagesPerPrompt, setImagesPerPrompt] = useState(1);
-  const [selectedModel, setSelectedModel] = useState<ImagenModel>('imagen-3.0-generate-002');
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
+  const [aspectRatio, setAspectRatio] = useAtom(aspectRatioAtom);
   
   // Generation state
   const [images, setImages] = useState<GeneratedImage[]>([]);
@@ -54,7 +58,7 @@ export function Home() {
     isOpen: false,
     imageId: '',
     currentPrompt: '',
-    currentModel: 'imagen-3.0-generate-002',
+    currentModel: 'gemini-2.5-flash-image-preview',
   });
   const [isRegenerating, setIsRegenerating] = useState(false);
   
@@ -110,6 +114,7 @@ export function Home() {
         imagesPerPrompt,
         concurrentRequests: 5,
         model: selectedModel,
+        aspectRatio,
       };
       
       // Start generation with progress tracking
@@ -142,7 +147,7 @@ export function Home() {
     } finally {
       setIsGenerating(false);
     }
-  }, [textareaValue, uploadedFile, imagesPerPrompt, selectedModel]);
+  }, [textareaValue, uploadedFile, imagesPerPrompt, selectedModel, aspectRatio]);
 
   // Handle single image regeneration
   const handleRegenerateImage = useCallback((imageId: string, currentPrompt: string) => {
@@ -307,7 +312,7 @@ export function Home() {
               <div className="space-y-2 text-xs text-gray-600">
                 <div className="flex justify-between">
                   <span>Rate Limit:</span>
-                  <span>10/min, 70/day per key</span>
+                  <span>Per model</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Concurrent:</span>
@@ -338,6 +343,8 @@ export function Home() {
                 onImagesPerPromptChange={setImagesPerPrompt}
                 selectedModel={selectedModel}
                 onModelChange={setSelectedModel}
+                aspectRatio={aspectRatio}
+                onAspectRatioChange={setAspectRatio}
                 disabled={isGenerating}
               />
               

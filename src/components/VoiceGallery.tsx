@@ -76,6 +76,8 @@ function VoiceCard({ voice, onRegenerate }: VoiceCardProps) {
       if (!audio.src) {
         console.log('Setting audio source:', voice.audioData.substring(0, 100) + '...');
         audio.src = voice.audioData;
+        // Ensure the element reloads the new source before playing
+        try { audio.load(); } catch {}
       }
       
       try {
@@ -101,10 +103,14 @@ function VoiceCard({ voice, onRegenerate }: VoiceCardProps) {
     setIsPlaying(false);
   }, []);
 
-  const handleAudioError = useCallback(() => {
+  const handleAudioError = useCallback(async () => {
     setIsPlaying(false);
-    toast.error('Error playing audio');
-  }, []);
+    toast.error('Error playing audio, trying fallback...');
+    // Try Web Audio API fallback automatically
+    if (voice.audioData) {
+      await playWithWebAudioAPI(voice.audioData);
+    }
+  }, [playWithWebAudioAPI, voice.audioData]);
 
   // Handle download audio
   const handleDownload = useCallback(async () => {
@@ -199,7 +205,7 @@ function VoiceCard({ voice, onRegenerate }: VoiceCardProps) {
                 ref={audioRef}
                 onEnded={handleAudioEnded}
                 onError={handleAudioError}
-                preload="none"
+                preload="auto"
               />
             </div>
           </div>

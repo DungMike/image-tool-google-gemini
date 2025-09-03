@@ -312,7 +312,7 @@ export function validatePrompts(prompts: string[], maxWords: number = 4000): { v
     }
     
     // Kiểm tra ký tự đặc biệt có thể gây vấn đề
-    const hasProblematicChars = /[<>{}[\]\\`]/.test(trimmed);
+    const hasProblematicChars = /[<>\{}[\]\\`]/.test(trimmed);
     if (hasProblematicChars) {
       warnings.push(`Text may contain problematic characters: ${trimmed.substring(0, 50)}...`);
     }
@@ -324,9 +324,9 @@ export function validatePrompts(prompts: string[], maxWords: number = 4000): { v
 }
 
 // Format prompt cho Gemini API
-export function formatPromptForGemini(prompt: string): string {
+export function formatPromptForGemini(prompt: string, aspectRatio?: string): string {
   // Thêm prefix để cải thiện chất lượng ảnh
-  const enhancedPrompt = `Create a high-quality, detailed image: ${prompt}`;
+  const enhancedPrompt = `Create a high-quality, detailed image${aspectRatio ? ` aspect ratio: ${aspectRatio}` : ''}: ${prompt}`;
   
   // Làm sạch và format
   return enhancedPrompt
