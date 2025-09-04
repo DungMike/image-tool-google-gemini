@@ -298,7 +298,7 @@ export function TTSInput({
                   value={chunkingConfig.sentencesPerChunk}
                   onChange={(e) => onChunkingConfigChange({ 
                     ...chunkingConfig, 
-                    sentencesPerChunk: Math.max(1, Math.min(20, parseInt(e.target.value) || 1))
+                    sentencesPerChunk: parseInt(e.target.value) 
                   })}
                   disabled={disabled}
                   className="input-field w-20"
@@ -321,7 +321,7 @@ export function TTSInput({
                   value={chunkingConfig.maxWordsPerChunk}
                   onChange={(e) => onChunkingConfigChange({ 
                     ...chunkingConfig, 
-                    maxWordsPerChunk: Math.max(100, Math.min(4000, parseInt(e.target.value) || 2000))
+                    maxWordsPerChunk:  parseInt(e.target.value)
                   })}
                   disabled={disabled}
                   className="input-field w-24"

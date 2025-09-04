@@ -1,6 +1,8 @@
 import { atom } from 'jotai';
 import type { ImagenModel, AspectRatio, TTSModel, GeneratedVoice } from '@/types';
 
+// Removed queue interface - using simple sequential processing
+
 export const selectedModelAtom = atom<ImagenModel>('gemini-2.5-flash-image-preview');
 export const aspectRatioAtom = atom<AspectRatio>('16:9');
 export const selectedTTSModelAtom = atom<TTSModel>('gemini-2.5-flash-preview-tts');
@@ -71,3 +73,5 @@ export const resetVoicesAtom = atom(
     set(orderedVoicesAtom, []);
   }
 );
+
+// Removed queue management atoms - using simple sequential processing

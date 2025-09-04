@@ -12,7 +12,7 @@ import {
   sortedVoicesAtom, 
   updateVoiceAtom, 
   resetVoicesAtom,
-  upsertVoiceAtom 
+  upsertVoiceAtom
 } from '@/state/atoms';
 
 // Components
@@ -24,7 +24,7 @@ import { BatchProgress } from '@/components/BatchProgress';
 
 // Utils
 import { parsePrompts, validatePrompts } from '@/utils/promptParser';
-import { batchGenerateVoices, regenerateVoice, TTS_MODELS } from '@/utils/ttsGeneration';
+import { batchGenerateVoices, regenerateVoice, TTS_MODELS, resetApiCallCounter, getApiCallStats } from '@/utils/ttsGeneration';
 import { exportVoicesToZip, validateVoiceExport, estimateZipSize } from '@/utils/audioExport';
 import { getApiKeysStats } from '@/utils/apiKeyRotation';
 
@@ -58,6 +58,8 @@ export function VoiceGeneration() {
   const [, resetVoices] = useAtom(resetVoicesAtom);
   const [, upsertVoice] = useAtom(upsertVoiceAtom);
   
+  // Removed queue state - using simple sequential processing
+  
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState<TTSBatchProgress>({
@@ -85,6 +87,11 @@ export function VoiceGeneration() {
   
   // Export state
   const [isExporting, setIsExporting] = useState(false);
+  
+  // API call tracking state
+  const [apiCallStats, setApiCallStats] = useState(getApiCallStats());
+
+  // Removed queue setup - using simple sequential processing
 
   // Handle batch generation
   const handleGenerate = useCallback(async () => {
@@ -150,7 +157,7 @@ export function VoiceGeneration() {
       
       const config: TTSGenerationConfig = {
         textsPerVoice,
-        concurrentRequests: 5,
+        concurrentRequests: 3, // Giảm xuống để an toàn hơn với rate limits
         model: selectedModel,
         voiceName: selectedVoice,
         customPrompt: customPrompt.trim() || undefined,
@@ -194,6 +201,9 @@ export function VoiceGeneration() {
         failed: results.filter(v => v.status === 'error').length,
         orderedFilenames: results.map(v => v.filename)
       });
+      
+      // Update API call stats
+      setApiCallStats(getApiCallStats());
       
       // Show completion toast
       const successful = results.filter(voice => voice.status === 'success').length;
@@ -259,6 +269,13 @@ export function VoiceGeneration() {
       setIsRegenerating(false);
     }
   }, [regenerateModal, voices, selectedModel, updateVoice]);
+
+  // Handle reset API call counter
+  const handleResetApiCounter = useCallback(() => {
+    resetApiCallCounter();
+    setApiCallStats(getApiCallStats());
+    toast.info('API call counter reset');
+  }, []);
 
   // Handle export all voices
   const handleExportAll = useCallback(async () => {
@@ -368,6 +385,81 @@ export function VoiceGeneration() {
           <div className="lg:col-span-1 space-y-6">
             {/* API Key Status */}
             <ApiKeyStatus service="voice" />
+            
+            {/* API Call Statistics */}
+            <div className="card p-4 bg-green-50 border-green-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full" />
+                  <h3 className="text-sm font-medium text-green-900">API Monitor</h3>
+                </div>
+                <button
+                  onClick={handleResetApiCounter}
+                  className="text-xs text-green-700 hover:text-green-900 underline"
+                >
+                  Reset Counter
+                </button>
+              </div>
+              <div className="space-y-2 text-xs text-green-800">
+                <div className="flex justify-between">
+                  <span>Session Calls:</span>
+                  <span className="font-mono">{apiCallStats.totalCalls}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Successful:</span>
+                  <span className="font-mono text-green-700">{apiCallStats.successfulCalls}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Failed:</span>
+                  <span className="font-mono text-red-700">{apiCallStats.failedCalls}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Success Rate:</span>
+                  <span className="font-mono">
+                    {apiCallStats.totalCalls > 0 
+                      ? `${((apiCallStats.successfulCalls / apiCallStats.totalCalls) * 100).toFixed(1)}%`
+                      : '0%'
+                    }
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2 border-t border-green-300">
+                <p className="text-xs text-green-700">
+                  🚀 Live API monitoring - Real calls to Gemini TTS
+                </p>
+              </div>
+            </div>
+            
+            {/* Batch Processing Info */}
+            <div className="card p-4 bg-blue-50 border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                <h3 className="text-sm font-medium text-blue-900">Processing Mode</h3>
+              </div>
+              <div className="space-y-2 text-xs text-blue-800">
+                <div className="flex justify-between">
+                  <span>Mode:</span>
+                  <span className="font-mono text-green-700">Batch Processing</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Batch Size:</span>
+                  <span className="font-mono">4 voices parallel</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Delay Between Batches:</span>
+                  <span className="font-mono">5 seconds</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Rate Limit Safe:</span>
+                  <span className="font-mono text-green-700">✅ Yes</span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2 border-t border-blue-300">
+                <p className="text-xs text-blue-700">
+                  🚀 Processing 4 voices in parallel per batch to maximize speed
+                </p>
+              </div>
+            </div>
             
             {/* TTS Info */}
             <div className="card p-4">

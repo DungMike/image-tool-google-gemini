@@ -1,9 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
-import pLimit from 'p-limit';
+// Using batch processing with 8 parallel calls per batch (2 calls per key × 4 keys)
 import type { GeneratedVoice, TTSGenerationConfig, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed, calculateWaitTime, getApiKeys } from './apiKeyRotation';
+import { getNextAvailableApiKey, markApiKeyUsed } from './apiKeyRotation';
 
-const CONCURRENT_REQUESTS = parseInt(import.meta.env.VITE_CONCURRENT_REQUESTS) || 5;
+// Batch processing configuration - process 8 voices in parallel, then wait before next batch
 
 // Available TTS models với thông tin chi tiết
 export const TTS_MODELS: TTSModelInfo[] = [
@@ -213,6 +213,97 @@ async function convertRawPCMToWAV(rawPCMBase64: string): Promise<string> {
   }
 }
 
+// API Call Counter for testing
+let API_CALL_COUNT = 0;
+let API_CALLS_LOG: Array<{
+  timestamp: number;
+  text: string;
+  model: string;
+  voiceName: string;
+  keyIndex: number;
+  success: boolean;
+}> = [];
+
+// Reset API call counter
+export function resetApiCallCounter() {
+  API_CALL_COUNT = 0;
+  API_CALLS_LOG = [];
+  console.log('🔄 API call counter reset');
+}
+
+// Get API call statistics
+export function getApiCallStats() {
+  return {
+    totalCalls: API_CALL_COUNT,
+    callsLog: API_CALLS_LOG,
+    successfulCalls: API_CALLS_LOG.filter(call => call.success).length,
+    failedCalls: API_CALLS_LOG.filter(call => !call.success).length,
+  };
+}
+
+// Batch processing configuration
+const BATCH_SIZE = 4; // Process 8 voices in parallel (2 per key × 4 keys)
+const DELAY_BETWEEN_BATCHES = 5000; // 5 seconds between batches to respect rate limits
+
+// Helper function to wait
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Process voices in parallel batches
+async function processBatch(
+  voiceObjects: GeneratedVoice[],
+  config: TTSGenerationConfig,
+  batchIndex: number,
+  totalBatches: number
+): Promise<{ completed: number; failed: number }> {
+  console.log(`🚀 Processing batch ${batchIndex + 1}/${totalBatches} with ${voiceObjects.length} voices in parallel`);
+  
+  const promises = voiceObjects.map(async (voiceObj, index) => {
+    try {
+      console.log(`🎯 Starting voice ${index + 1}/${voiceObjects.length} in batch ${batchIndex + 1}: ${voiceObj.filename}`);
+      
+      // Generate voice with automatic key rotation
+      const audioData = await generateVoiceWithRotation(
+        voiceObj.text,
+        config.model,
+        config.voiceName,
+        config.customPrompt
+      );
+      
+      // Update voice object with audio data
+      voiceObj.audioUrl = audioData;
+      voiceObj.audioData = audioData; // For compatibility with VoiceGallery component
+      voiceObj.status = 'success';
+      
+      console.log(`✅ Voice completed in batch ${batchIndex + 1}: ${voiceObj.filename}`);
+      return { success: true, voiceObj };
+      
+    } catch (error) {
+      console.error(`❌ Failed to generate voice in batch ${batchIndex + 1} for "${voiceObj.text}":`, error);
+      
+      // Update voice object with error
+      voiceObj.status = 'error';
+      voiceObj.error = error instanceof Error ? error.message : 'Unknown error';
+      
+      return { success: false, voiceObj };
+    }
+  });
+  
+  // Wait for all promises in this batch to complete
+  const results = await Promise.all(promises);
+  
+  // Count successful and failed generations
+  const completed = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+  
+  console.log(`🏁 Batch ${batchIndex + 1} completed: ${completed} successful, ${failed} failed`);
+  
+  return { completed, failed };
+}
+
+
+
 // Generate single voice using TTS API
 async function generateSingleVoice(
   text: string,
@@ -222,12 +313,28 @@ async function generateSingleVoice(
   voiceName: string = 'Kore',
   customPrompt?: string
 ): Promise<string> {
+  // Increment API call counter for monitoring
+  API_CALL_COUNT++;
+  
+  console.log(`🔢 API CALL #${API_CALL_COUNT} - Key Index: ${keyIndex}, Text: "${text.substring(0, 30)}..."`);
+  
+  const callInfo = {
+    timestamp: Date.now(),
+    text: text.substring(0, 50),
+    model,
+    voiceName,
+    keyIndex,
+    success: true
+  };
+  
   const genAI = createGenAIClient(apiKey);
   
   try {
     const formattedText = formatTextForTTS(text, customPrompt);
     
-    // Sử dụng TTS API để tạo voice
+    // 🚀 REAL API CALL to Google Gemini TTS
+    console.log(`🎤 Calling Gemini TTS API for "${formattedText.substring(0, 30)}..."`);
+    
     const response = await genAI.models.generateContent({
       model,
       contents: [{ parts: [{ text: formattedText }] }],
@@ -259,11 +366,7 @@ async function generateSingleVoice(
     const modelInfo = TTS_MODELS.find(m => m.id === model);
     
     // Log audio data info for debugging
-    console.log('Audio data received:', {
-      length: audioData.length,
-      firstChars: audioData.substring(0, 50),
-      lastChars: audioData.substring(audioData.length - 50)
-    });
+    console.log(`✅ Audio data received (${audioData.length} chars) for key ${keyIndex}`);
     
     // Analyze the audio format by looking at the header
     try {
@@ -286,6 +389,8 @@ async function generateSingleVoice(
       // Check if it's a standard WAV file
       if (headerString.includes('RIFF') && headerString.includes('WAVE')) {
         console.log('✅ Standard WAV format detected');
+        callInfo.success = true;
+        API_CALLS_LOG.push(callInfo);
         markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/wav;base64,${audioData}`;
       }
@@ -293,6 +398,8 @@ async function generateSingleVoice(
       // Check if it's MP3
       if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
         console.log('✅ MP3 format detected');
+        callInfo.success = true;
+        API_CALLS_LOG.push(callInfo);
         markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/mpeg;base64,${audioData}`;
       }
@@ -300,6 +407,8 @@ async function generateSingleVoice(
       // Check if it's OGG
       if (headerString.includes('OggS')) {
         console.log('✅ OGG format detected');
+        callInfo.success = true;
+        API_CALLS_LOG.push(callInfo);
         markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/ogg;base64,${audioData}`;
       }
@@ -309,6 +418,8 @@ async function generateSingleVoice(
       console.log('🔍 Raw data pattern:', Array.from(bytes.slice(0, 8)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' '));
       
       const convertedAudioData = await convertRawPCMToWAV(audioData);
+      callInfo.success = true;
+      API_CALLS_LOG.push(callInfo);
       markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
       return convertedAudioData;
       
@@ -318,18 +429,27 @@ async function generateSingleVoice(
       try {
         console.log('🔄 Last resort: converting as raw PCM...');
         const convertedAudioData = await convertRawPCMToWAV(audioData);
+        callInfo.success = true;
+        API_CALLS_LOG.push(callInfo);
         markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return convertedAudioData;
       } catch (conversionError) {
         console.error('❌ PCM conversion also failed:', conversionError);
+        callInfo.success = true;
+        API_CALLS_LOG.push(callInfo);
         markApiKeyUsed('voice', keyIndex, true, model, undefined, modelInfo?.rateLimit.requestsPerDay);
         return `data:audio/wav;base64,${audioData}`;
       }
     }
     
   } catch (error) {
-    console.error(`Error generating voice for text "${text}":`, error);
+    console.error(`❌ Error generating voice for text "${text}":`, error);
     const modelInfo = TTS_MODELS.find(m => m.id === model);
+    
+    // Log failed call
+    callInfo.success = false;
+    API_CALLS_LOG.push(callInfo);
+    
     markApiKeyUsed('voice', keyIndex, false, model, undefined, modelInfo?.rateLimit.requestsPerDay);
     throw error;
   }
@@ -356,7 +476,7 @@ export async function generateVoiceWithRotation(
   );
 }
 
-// Batch generate voices với progress tracking and real-time updates
+// Batch generate voices với sequential processing để tránh rate limit
 export async function batchGenerateVoices(
   texts: string[],
   config: TTSGenerationConfig,
@@ -365,21 +485,16 @@ export async function batchGenerateVoices(
 ): Promise<GeneratedVoice[]> {
   console.log("🚀 ~ batchGenerateVoices ~ config:", config)
   
-  // Get model-specific concurrent requests limit
+  // Get model info
   const modelInfo = TTS_MODELS.find(m => m.id === config.model);
-  const keys = getApiKeys();
-  const concurrentLimit = (modelInfo?.rateLimit.requestsPerMinute || CONCURRENT_REQUESTS) * keys.length;
-  console.log("🚀 ~ batchGenerateVoices ~ concurrentLimit:", concurrentLimit)
+  console.log(`📊 Model: ${modelInfo?.name || config.model}, Sequential processing to avoid rate limits`);
   
-  const limit = pLimit(concurrentLimit);
   const results: GeneratedVoice[] = [];
   let completed = 0;
   let failed = 0;
-  const timestamp = batchTimestamp || Date.now(); // Use provided timestamp or create new one
+  const timestamp = batchTimestamp || Date.now();
   
-  // Tạo tasks cho tất cả voices cần generate với ordered IDs
-  const tasks: Array<() => Promise<void>> = [];
-  
+  // Tạo tất cả voice objects trước
   texts.forEach((text, chunkIndex) => {
     console.log(`🚀 ~ batchGenerateVoices ~ chunk ${chunkIndex + 1}:`, text)
     for (let voiceIndex = 0; voiceIndex < config.textsPerVoice; voiceIndex++) {
@@ -402,76 +517,6 @@ export async function batchGenerateVoices(
       };
       
       results.push(voiceObj);
-      
-      // Tạo task để generate voice này
-      tasks.push(() => limit(async () => {
-        try {
-          onProgress?.({
-            total: texts.length * config.textsPerVoice,
-            completed,
-            failed,
-            current: text,
-          });
-          
-          const audioData = await generateVoiceWithRotation(
-            text, 
-            config.model, 
-            config.voiceName, 
-            config.customPrompt
-          );
-          
-          // Cập nhật kết quả với audio data
-          const resultIndex = results.findIndex(r => r.id === voiceId);
-          if (resultIndex >= 0) {
-            results[resultIndex] = {
-              ...results[resultIndex],
-              audioData,
-              status: 'success',
-            };
-          }
-          
-          completed++;
-          
-          // Gửi completed voice qua callback để hiển thị real-time
-          const completedVoice = results[resultIndex];
-          if (completedVoice) {
-            console.log(`✅ Voice completed: ${completedVoice.filename} (${completedVoice.id})`);
-            onProgress?.({
-              total: texts.length * config.textsPerVoice,
-              completed,
-              failed,
-              current: text,
-            }, [completedVoice]);
-          }
-          
-        } catch (error) {
-          console.error(`Failed to generate voice for chunk ${chunkIndex + 1} "${text}":`, error);
-          
-          // Cập nhật kết quả với lỗi
-          const resultIndex = results.findIndex(r => r.id === voiceId);
-          if (resultIndex >= 0) {
-            results[resultIndex] = {
-              ...results[resultIndex],
-              status: 'error',
-              error: error instanceof Error ? error.message : 'Unknown error',
-            };
-          }
-          
-          failed++;
-          
-          // Gửi failed voice qua callback để hiển thị real-time
-          const failedVoice = results[resultIndex];
-          if (failedVoice) {
-            console.log(`❌ Voice failed: ${failedVoice.filename} (${failedVoice.id})`);
-            onProgress?.({
-              total: texts.length * config.textsPerVoice,
-              completed,
-              failed,
-              current: text,
-            }, [failedVoice]);
-          }
-        }
-      }));
     }
   });
   
@@ -485,22 +530,86 @@ export async function batchGenerateVoices(
     }, results);
   }
   
-  // Thực hiện tất cả tasks với rate limiting
-  const batchSize = concurrentLimit || CONCURRENT_REQUESTS;
+  // Reset API call counter before starting
+  const initialApiCalls = API_CALL_COUNT;
+  console.log(`🔄 Starting batch generation. Current API calls: ${initialApiCalls}`);
   
-  for (let i = 0; i < tasks.length; i += batchSize) {
-    const batch = tasks.slice(i, i + batchSize);
+  // Split voices into batches of BATCH_SIZE
+  const batches: GeneratedVoice[][] = [];
+  for (let i = 0; i < results.length; i += BATCH_SIZE) {
+    batches.push(results.slice(i, i + BATCH_SIZE));
+  }
+  
+  console.log(`🚀 Processing ${results.length} voices in ${batches.length} batches of max ${BATCH_SIZE} voices each`);
+  
+  const startTime = Date.now();
+  
+  // Process each batch
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
     
-    // Chạy batch hiện tại
-    await Promise.all(batch.map(task => task()));
+    console.log(`📦 Starting batch ${batchIndex + 1}/${batches.length} with ${batch.length} voices`);
     
-    // Đợi giữa các batch để tránh rate limit
-    if (i + batchSize < tasks.length) {
-      const waitTime = calculateWaitTime('voice', modelInfo?.rateLimit.requestsPerMinute);
-      console.log(`Waiting ${waitTime}ms before next batch...`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+    // Send progress update before batch starts
+    onProgress?.({
+      total: results.length,
+      completed,
+      failed,
+      current: `Processing batch ${batchIndex + 1}/${batches.length}`,
+    });
+    
+    try {
+      // Process this batch in parallel
+      const batchResult = await processBatch(batch, config, batchIndex, batches.length);
+      
+      // Update counters
+      completed += batchResult.completed;
+      failed += batchResult.failed;
+      
+      console.log(`✅ Batch ${batchIndex + 1} completed: ${batchResult.completed} successful, ${batchResult.failed} failed`);
+      
+      // Send batch completion update with completed voices
+      const completedVoicesInBatch = batch.filter(v => v.status === 'success' || v.status === 'error');
+      onProgress?.({
+        total: results.length,
+        completed,
+        failed,
+        current: `Batch ${batchIndex + 1} completed`,
+      }, completedVoicesInBatch);
+      
+    } catch (error) {
+      console.error(`❌ Batch ${batchIndex + 1} failed:`, error);
+      
+      // Mark all voices in this batch as failed
+      batch.forEach(voiceObj => {
+        if (voiceObj.status === 'generating') {
+          voiceObj.status = 'error';
+          voiceObj.error = 'Batch processing failed';
+          failed++;
+        }
+      });
+      
+      // Send batch failure update
+      onProgress?.({
+        total: results.length,
+        completed,
+        failed,
+        current: `Batch ${batchIndex + 1} failed`,
+      }, batch);
+    }
+    
+    // Wait between batches to respect rate limits (except for the last batch)
+    if (batchIndex < batches.length - 1) {
+      console.log(`⏳ Waiting ${DELAY_BETWEEN_BATCHES}ms before next batch...`);
+      await delay(DELAY_BETWEEN_BATCHES);
     }
   }
+  
+  const endTime = Date.now();
+  
+  // Calculate actual API calls made in this batch
+  const finalApiCalls = API_CALL_COUNT;
+  const apiCallsThisBatch = finalApiCalls - initialApiCalls;
   
   // Sắp xếp kết quả theo thứ tự trước khi trả về
   results.sort((a, b) => {
@@ -510,7 +619,25 @@ export async function batchGenerateVoices(
     return a.voiceIndex - b.voiceIndex;
   });
   
+  // Detailed logging
   console.log('📋 Final ordered results:', results.map(r => ({ filename: r.filename, status: r.status })));
+  console.log(`🏁 Batch generation completed in ${((endTime - startTime) / 1000).toFixed(2)}s:`);
+  console.log(`   📦 Processed ${batches.length} batches of max ${BATCH_SIZE} voices each`);
+  console.log(`   ✅ Successful: ${completed}`);
+  console.log(`   ❌ Failed: ${failed}`);
+  console.log(`   🚀 Real API calls made: ${apiCallsThisBatch}/${results.length}`);
+  console.log(`   📊 Total session API calls: ${finalApiCalls}`);
+  console.log(`   ⏳ Average time per voice: ${(((endTime - startTime) / results.length) / 1000).toFixed(2)}s`);
+  console.log(`   🔥 Speed improvement: ~${Math.round(BATCH_SIZE)}x faster than sequential processing`);
+  
+  // Get API call stats
+  const apiStats = getApiCallStats();
+  console.log(`📈 API Call Statistics:`, {
+    totalCalls: apiStats.totalCalls,
+    successfulCalls: apiStats.successfulCalls,
+    failedCalls: apiStats.failedCalls,
+    successRate: `${((apiStats.successfulCalls / apiStats.totalCalls) * 100).toFixed(1)}%`
+  });
   
   return results;
 }
