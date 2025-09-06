@@ -4,6 +4,7 @@ import type { TTSModel, ChunkingConfig } from '@/types';
 import { toast } from 'react-toastify';
 import { TTSModelSelector } from './TTSModelSelector';
 import { VoiceSelector } from './VoiceSelector';
+import { getApiKeys } from '@/utils/apiKeyRotation';
 
 interface TTSInputProps {
   textareaValue: string;
@@ -56,6 +57,8 @@ export function TTSInput({
     onTextareaChange(examples.join('\n'));
     toast.info('Example texts loaded!');
   }, [onTextareaChange]);
+  const keys = getApiKeys()
+  console.log("keys", keys.length)
 
   return (
     <div className="space-y-6">
@@ -240,6 +243,8 @@ export function TTSInput({
             <option value={2}>2</option>
             <option value={3}>3</option>
             <option value={4}>4</option>
+            <option value={5}>5</option>
+            <option value={6}>6</option>
           </select>
         </div>
         {/* Custom Prompt */}
