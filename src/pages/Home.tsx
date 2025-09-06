@@ -25,8 +25,7 @@ import type {
   UploadedFile, 
   GenerationConfig, 
   BatchGenerationProgress,
-  ImagenModel,
-  AspectRatio 
+  ImagenModel
 } from '@/types';
 import { useAtom } from 'jotai';
 import { selectedModelAtom, aspectRatioAtom } from '@/state/atoms';

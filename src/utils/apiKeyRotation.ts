@@ -107,6 +107,7 @@ function checkMinuteRateLimit(keyStatus: ApiKeyStatus): boolean {
 // Lấy API key khả dụng tiếp theo cho service cụ thể
 export function getNextAvailableApiKey(service: ServiceType, ttsModel?: string, imageDailyLimitOverride?: number, ttsDailyLimitOverride?: number): { key: string; index: number } | null {
   const keys = getApiKeys();
+  console.log('Available API keys:', keys);
   if (keys.length === 0) return null;
   
   const status = getApiKeysStatus();

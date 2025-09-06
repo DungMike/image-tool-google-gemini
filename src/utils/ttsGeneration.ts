@@ -464,7 +464,7 @@ export async function generateVoiceWithRotation(
 ): Promise<string> {
   const modelInfo = TTS_MODELS.find(m => m.id === model);
   const keyInfo = getNextAvailableApiKey('voice', model, undefined, modelInfo?.rateLimit.requestsPerDay);
-  
+  console.log(`🔑 Selected API key index: ${keyInfo?.index} for model: ${model}`);
   if (!keyInfo) {
     throw new Error('No available API keys. All keys have reached their daily limit.');
   }
