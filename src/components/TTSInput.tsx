@@ -19,6 +19,8 @@ interface TTSInputProps {
   chunkingConfig: ChunkingConfig;
   onChunkingConfigChange: (config: ChunkingConfig) => void;
   disabled?: boolean;
+  selectedKey: number;
+  onKeyChange: (key: number) => void;
 }
 
 export function TTSInput({
@@ -35,6 +37,8 @@ export function TTSInput({
   chunkingConfig,
   onChunkingConfigChange,
   disabled = false,
+  selectedKey,
+  onKeyChange,
 }: TTSInputProps) {
   const [showGuidance, setShowGuidance] = useState(false);
 
@@ -219,7 +223,22 @@ export function TTSInput({
           onVoiceChange={onVoiceChange}
           disabled={disabled}
         />
-
+        <div className="space-y-2">
+          <label htmlFor="KEY" className="block text-sm font-medium text-gray-700">
+            KEY
+          </label>
+          <input
+            id="KEY"
+            type="number"
+            value={selectedKey}
+            onChange={(e) => onKeyChange(parseInt(e.target.value))}
+            disabled={disabled}
+            className="input-field"
+          />
+          <p className="text-xs text-gray-500">
+            Add instructions for how the text should be spoken (tone, pace, emotion, etc.)
+          </p>
+        </div>
         {/* Custom Prompt */}
         <div className="space-y-2">
           <label htmlFor="custom-prompt" className="block text-sm font-medium text-gray-700">

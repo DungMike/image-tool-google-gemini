@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 // Using batch processing with 8 parallel calls per batch (2 calls per key × 4 keys)
 import type { GeneratedVoice, TTSGenerationConfig, TTSModel, TTSModelInfo, VoiceConfig, TTSProgressCallback } from '@/types';
-import { getNextAvailableApiKey, markApiKeyUsed } from './apiKeyRotation';
+import { getApiKeys, getNextAvailableApiKey, markApiKeyUsed } from './apiKeyRotation';
 
 // Batch processing configuration - process 8 voices in parallel, then wait before next batch
 
@@ -268,7 +268,8 @@ async function processBatch(
         voiceObj.text,
         config.model,
         config.voiceName,
-        config.customPrompt
+        config.apiKeyIndexStart,
+        config.customPrompt,
       );
       
       // Update voice object with audio data
@@ -460,17 +461,16 @@ export async function generateVoiceWithRotation(
   text: string, 
   model: TTSModel = 'gemini-2.5-flash-preview-tts',
   voiceName: string = 'Kore',
+  apiKeyIndexStart: number,
   customPrompt?: string
 ): Promise<string> {
-  const modelInfo = TTS_MODELS.find(m => m.id === model);
-  const keyInfo = getNextAvailableApiKey('voice', model, undefined, modelInfo?.rateLimit.requestsPerDay);
-  console.log(`🔑 Selected API key index: ${keyInfo?.index} for model: ${model}`);
-  if (!keyInfo) {
-    throw new Error('No available API keys. All keys have reached their daily limit.');
-  }
-  
+  const keys = getApiKeys()
+  console.log(  "🚀 ~ generateVoiceWithRotation ~ keys:", keys)
+  console.log(  "🚀 ~ generateVoiceWithRotation apiKeyIndexStart", apiKeyIndexStart)
+  const keyInfor = keys[apiKeyIndexStart -1]
+  console.log("🚀 ~ generateVoiceWithRotation ~ keyInfor:", keyInfor)
   return withRetry(
-    () => generateSingleVoice(text, keyInfo.index, keyInfo.key, model, voiceName, customPrompt),
+    () => generateSingleVoice(text, apiKeyIndexStart, keyInfor, model, voiceName, customPrompt),
     3,
     1000
   );
@@ -649,10 +649,11 @@ export async function regenerateVoice(
   originalVoice: GeneratedVoice,
   model: TTSModel = 'gemini-2.5-flash-preview-tts',
   voiceName: string = 'Kore',
+  apiKeyIndexStart: number,
   customPrompt?: string
 ): Promise<GeneratedVoice> {
   try {
-    const audioData = await generateVoiceWithRotation(newText, model, voiceName, customPrompt);
+    const audioData = await generateVoiceWithRotation(newText, model, voiceName, apiKeyIndexStart, customPrompt);
     const timestamp = Date.now();
     
     // Tạo filename mới cho regenerated voice

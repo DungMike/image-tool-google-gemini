@@ -44,7 +44,8 @@ export function VoiceGeneration() {
   const [selectedModel, setSelectedModel] = useState<TTSModel>('gemini-2.5-flash-preview-tts');
   const [selectedVoice, setSelectedVoice] = useState('Kore');
   const [customPrompt, setCustomPrompt] = useState('');
-  
+  const [selectedKey, setSelectedKey] = useState(1);
+
   // Chunking configuration
   const [chunkingConfig, setChunkingConfig] = useState<ChunkingConfig>({
     sentencesPerChunk: 5,
@@ -160,6 +161,7 @@ export function VoiceGeneration() {
         concurrentRequests: 3, // Giảm xuống để an toàn hơn với rate limits
         model: selectedModel,
         voiceName: selectedVoice,
+        apiKeyIndexStart: selectedKey, // Chuyển đổi sang chỉ số mảng (0-based)
         customPrompt: customPrompt.trim() || undefined,
         chunkingConfig,
       };
@@ -251,7 +253,7 @@ export function VoiceGeneration() {
     
     try {
       const useModel = model || selectedModel;
-      const newVoice = await regenerateVoice(voiceId, newText, originalVoice, useModel, voiceName, customPrompt);
+      const newVoice = await regenerateVoice(voiceId, newText, originalVoice, useModel, voiceName, selectedKey, customPrompt);
       
       // Update the voice in atom storage
       updateVoice({ id: voiceId, voice: newVoice });
@@ -504,10 +506,12 @@ export function VoiceGeneration() {
                 selectedVoice={selectedVoice}
                 onVoiceChange={setSelectedVoice}
                 customPrompt={customPrompt}
-                onCustomPromptChange={setCustomPrompt}
+                onCustomPromptChange={setCustomPrompt}  
                 chunkingConfig={chunkingConfig}
                 onChunkingConfigChange={setChunkingConfig}
                 disabled={isGenerating}
+                selectedKey={selectedKey}
+                onKeyChange={setSelectedKey}
               />
               
               {/* Generate Button */}

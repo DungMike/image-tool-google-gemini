@@ -134,6 +134,7 @@ export interface TTSGenerationConfig {
   concurrentRequests: number;
   model: TTSModel;
   voiceName: string;
+  apiKeyIndexStart: number; // Chỉ số mảng của API key để bắt đầu sử dụng (0-based)
   customPrompt?: string;
   chunkingConfig?: ChunkingConfig;
 }
