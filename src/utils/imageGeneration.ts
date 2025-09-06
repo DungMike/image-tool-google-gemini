@@ -14,7 +14,7 @@ export const IMAGEN_MODELS: ImagenModelInfo[] = [
     description: 'Balanced quality and speed, recommended for most use cases',
     speed: 'Standard',
     quality: 'Standard',
-    rateLimitPerMinute: 20,
+    rateLimitPerMinute: 10,
     rateLimitPerDay: 1000,
   },
   {
@@ -121,6 +121,8 @@ async function generateSingleImage(
   model: ImagenModel = 'imagen-3.0-generate-002',
   aspectRatio?: string
 ): Promise<string> {
+  console.log("🚀 ~ generateSingleImage ~ apiKey:", apiKey)
+  console.log("🚀 ~ generateSingleImage ~ keyIndex:", keyIndex)
   const genAI = createGenAIClient(apiKey);
   
   try {
@@ -216,8 +218,7 @@ export async function batchGenerateImages(
 ): Promise<GeneratedImage[]> {
   // Get model-specific concurrent requests limit
   const modelInfo = IMAGEN_MODELS.find(m => m.id === config.model);
-  const keys = getApiKeys();
-  const concurrentLimit = (modelInfo?.rateLimitPerMinute || CONCURRENT_REQUESTS) * keys.length;
+  const concurrentLimit = (modelInfo?.rateLimitPerMinute || CONCURRENT_REQUESTS);
   console.log("🚀 ~ batchGenerateImages ~ concurrentLimit:", concurrentLimit)
   
   const limit = pLimit(concurrentLimit);
