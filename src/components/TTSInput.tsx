@@ -40,6 +40,8 @@ export function TTSInput({
   selectedKey,
   onKeyChange,
 }: TTSInputProps) {
+
+  console.log("selectedKey", selectedKey)
   const [showGuidance, setShowGuidance] = useState(false);
 
   // Load example texts
@@ -223,21 +225,22 @@ export function TTSInput({
           onVoiceChange={onVoiceChange}
           disabled={disabled}
         />
-        <div className="space-y-2">
-          <label htmlFor="KEY" className="block text-sm font-medium text-gray-700">
-            KEY
+        
+        <div className="flex items-center gap-4">
+          <label htmlFor="voices-key" className="text-sm text-gray-600 whitespace-nowrap">
+            Key use
           </label>
-          <input
-            id="KEY"
-            type="number"
+          <select
+            id="ces-key"
             value={selectedKey}
             onChange={(e) => onKeyChange(parseInt(e.target.value))}
-            disabled={disabled}
-            className="input-field"
-          />
-          <p className="text-xs text-gray-500">
-            Add instructions for how the text should be spoken (tone, pace, emotion, etc.)
-          </p>
+            className="input-field w-20"
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+          </select>
         </div>
         {/* Custom Prompt */}
         <div className="space-y-2">
